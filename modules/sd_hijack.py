@@ -9,8 +9,9 @@ from torch.nn.functional import silu
 
 import modules.textual_inversion.textual_inversion
 
-from modules import prompt_parser, devices, sd_hijack_optimizations, shared, sd_hijack_checkpoint
+from modules import prompt_parser, devices, sd_hijack_optimizations, shared, sd_hijack_checkpoint, sd_hijack_clip, sd_hijack_open_clip
 from modules.shared import opts, device, cmd_opts
+from modules.hypernetworks import hypernetwork
 
 from modules.sd_hijack_optimizations import invokeAI_mps_available
 
