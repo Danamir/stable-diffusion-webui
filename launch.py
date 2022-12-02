@@ -5,6 +5,8 @@ import sys
 import importlib.util
 import shlex
 import platform
+import argparse
+import json
 
 dir_repos = "repositories"
 dir_extensions = "extensions"
@@ -15,6 +17,19 @@ index_url = os.environ.get('INDEX_URL', "")
 
 def extract_arg(args, name):
     return [x for x in args if x != name], name in args
+
+
+def extract_opt(args, name):
+    opt = None
+    is_present = False
+    if name in args:
+        is_present = True
+        idx = args.index(name)
+        del args[idx]
+        if idx < len(args) and args[idx][0] != "-":
+            opt = args[idx]
+            del args[idx]
+    return args, is_present, opt
 
 
 def run(command, desc=None, errdesc=None, custom_env=None):
@@ -119,11 +134,26 @@ def run_extension_installer(extension_dir):
         print(e, file=sys.stderr)
 
 
-def run_extensions_installers():
+def list_extensions(settings_file):
+    settings = {}
+
+    try:
+        if os.path.isfile(settings_file):
+            with open(settings_file, "r", encoding="utf8") as file:
+                settings = json.load(file)
+    except Exception as e:
+        print(e, file=sys.stderr)
+
+    disabled_extensions = set(settings.get('disabled_extensions', []))
+
+    return [x for x in os.listdir(dir_extensions) if x not in disabled_extensions]
+
+
+def run_extensions_installers(settings_file):
     if not os.path.isdir(dir_extensions):
         return
 
-    for dirname_extension in os.listdir(dir_extensions):
+    for dirname_extension in list_extensions(settings_file):
         run_extension_installer(os.path.join(dir_extensions, dirname_extension))
 
 
@@ -151,12 +181,15 @@ def prepare_enviroment():
     blip_commit_hash = os.environ.get('BLIP_COMMIT_HASH', "48211a1594f1321b00f14c9f7a5b4813144b2fb9")
 
     sys.argv += shlex.split(commandline_args)
-    test_argv = [x for x in sys.argv if x != '--tests']
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--ui-settings-file", type=str, help="filename to use for ui settings", default='config.json')
+    args, _ = parser.parse_known_args(sys.argv)
 
     sys.argv, skip_torch_cuda_test = extract_arg(sys.argv, '--skip-torch-cuda-test')
     sys.argv, reinstall_xformers = extract_arg(sys.argv, '--reinstall-xformers')
     sys.argv, update_check = extract_arg(sys.argv, '--update-check')
-    sys.argv, run_tests = extract_arg(sys.argv, '--tests')
+    sys.argv, run_tests, test_dir = extract_opt(sys.argv, '--tests')
     xformers = '--xformers' in sys.argv
     ngrok = '--ngrok' in sys.argv
 
@@ -211,7 +244,7 @@ def prepare_enviroment():
 
     run_pip(f"install -r {requirements_file}", "requirements for Web UI")
 
-    run_extensions_installers()
+    run_extensions_installers(settings_file=args.ui_settings_file)
 
     if update_check:
         version_check(commit)
@@ -221,24 +254,30 @@ def prepare_enviroment():
         exit(0)
 
     if run_tests:
-        tests(test_argv)
-        exit(0)
+        exitcode = tests(test_dir)
+        exit(exitcode)
 
 
-def tests(argv):
-    if "--api" not in argv:
-        argv.append("--api")
+def tests(test_dir):
+    if "--api" not in sys.argv:
+        sys.argv.append("--api")
+    if "--ckpt" not in sys.argv:
+        sys.argv.append("--ckpt")
+        sys.argv.append("./test/test_files/empty.pt")
+    if "--skip-torch-cuda-test" not in sys.argv:
+        sys.argv.append("--skip-torch-cuda-test")
 
-    print(f"Launching Web UI in another process for testing with arguments: {' '.join(argv[1:])}")
+    print(f"Launching Web UI in another process for testing with arguments: {' '.join(sys.argv[1:])}")
 
     with open('test/stdout.txt', "w", encoding="utf8") as stdout, open('test/stderr.txt', "w", encoding="utf8") as stderr:
-        proc = subprocess.Popen([sys.executable, *argv], stdout=stdout, stderr=stderr)
+        proc = subprocess.Popen([sys.executable, *sys.argv], stdout=stdout, stderr=stderr)
 
     import test.server_poll
-    test.server_poll.run_tests()
+    exitcode = test.server_poll.run_tests(proc, test_dir)
 
     print(f"Stopping Web UI process with id {proc.pid}")
     proc.kill()
+    return exitcode
 
 
 def start():

@@ -1,5 +1,6 @@
 __pycache__
 *.ckpt
+*.safetensors
 *.pth
 /ESRGAN/*
 /SwinIR/*
@@ -31,3 +32,4 @@ notification.mp3
 /extensions
 /test/stdout.txt
 /test/stderr.txt
+*.iml
