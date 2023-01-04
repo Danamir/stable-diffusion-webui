@@ -76,6 +76,24 @@ def apply_overlay(image, paste_loc, index, overlays):
     return image
 
 
+def txt2img_image_conditioning(sd_model, x, width, height):
+    if sd_model.model.conditioning_key not in {'hybrid', 'concat'}:
+        # Dummy zero conditioning if we're not using inpainting model.
+        # Still takes up a bit of memory, but no encoder call.
+        # Pretty sure we can just make this a 1x1 image since its not going to be used besides its batch size.
+        return x.new_zeros(x.shape[0], 5, 1, 1, dtype=x.dtype, device=x.device)
+
+    # The "masked-image" in this case will just be all zeros since the entire image is masked.
+    image_conditioning = torch.zeros(x.shape[0], 3, height, width, device=x.device)
+    image_conditioning = sd_model.get_first_stage_encoding(sd_model.encode_first_stage(image_conditioning))
+
+    # Add the fake full 1s mask to the first dimension.
+    image_conditioning = torch.nn.functional.pad(image_conditioning, (0, 0, 0, 0, 1, 0), value=1.0)
+    image_conditioning = image_conditioning.to(x.dtype)
+
+    return image_conditioning
+
+
 class StableDiffusionProcessing():
     """
     The first set of paramaters: sd_models -> do_not_reload_embeddings represent the minimum required to create a StableDiffusionProcessing
@@ -136,28 +154,12 @@ class StableDiffusionProcessing():
         self.all_negative_prompts = None
         self.all_seeds = None
         self.all_subseeds = None
+        self.iteration = 0
 
     def txt2img_image_conditioning(self, x, width=None, height=None):
-        if self.sampler.conditioning_key not in {'hybrid', 'concat'}:
-            # Dummy zero conditioning if we're not using inpainting model.
-            # Still takes up a bit of memory, but no encoder call.
-            # Pretty sure we can just make this a 1x1 image since its not going to be used besides its batch size.
-            return x.new_zeros(x.shape[0], 5, 1, 1)
+        self.is_using_inpainting_conditioning = self.sd_model.model.conditioning_key in {'hybrid', 'concat'}
 
-        self.is_using_inpainting_conditioning = True
-
-        height = height or self.height
-        width = width or self.width
-
-        # The "masked-image" in this case will just be all zeros since the entire image is masked.
-        image_conditioning = torch.zeros(x.shape[0], 3, height, width, device=x.device)
-        image_conditioning = self.sd_model.get_first_stage_encoding(self.sd_model.encode_first_stage(image_conditioning))
-
-        # Add the fake full 1s mask to the first dimension.
-        image_conditioning = torch.nn.functional.pad(image_conditioning, (0, 0, 0, 0, 1, 0), value=1.0)
-        image_conditioning = image_conditioning.to(x.dtype)
-
-        return image_conditioning
+        return txt2img_image_conditioning(self.sd_model, x, width or self.width, height or self.height)
 
     def depth2img_image_conditioning(self, source_image):
         # Use the AddMiDaS helper to Format our source image to suit the MiDaS model
@@ -420,7 +422,7 @@ def fix_seed(p):
     p.subseed = get_fixed_seed(p.subseed)
 
 
-def create_infotext(p, all_prompts, all_seeds, all_subseeds, comments, iteration=0, position_in_batch=0):
+def create_infotext(p, all_prompts, all_seeds, all_subseeds, comments=None, iteration=0, position_in_batch=0):
     index = position_in_batch + iteration * p.batch_size
 
     clip_skip = getattr(p, 'clip_skip', opts.CLIP_stop_at_last_layers)
@@ -544,6 +546,8 @@ def process_images_inner(p: StableDiffusionProcessing) -> Processed:
             state.job_count = p.n_iter
 
         for n in range(p.n_iter):
+            p.iteration = n
+
             if state.skipped:
                 state.skipped = False
 
@@ -707,7 +711,8 @@ class StableDiffusionProcessingTxt2Img(StableDiffusionProcessing):
             if not isinstance(image, Image.Image):
                 image = sd_samplers.sample_to_image(image, index, approximation=0)
 
-            images.save_image(image, self.outpath_samples, "", seeds[index], prompts[index], opts.samples_format, suffix="-before-highres-fix")
+            info = create_infotext(self, self.all_prompts, self.all_seeds, self.all_subseeds, [], iteration=self.iteration, position_in_batch=index)
+            images.save_image(image, self.outpath_samples, "", seeds[index], prompts[index], opts.samples_format, info=info, suffix="-before-highres-fix")
 
         if latent_scale_mode is not None:
             for i in range(samples.shape[0]):

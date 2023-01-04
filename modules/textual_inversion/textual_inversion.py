@@ -251,6 +251,7 @@ def validate_train_inputs(model_name, learn_rate, batch_size, gradient_step, dat
     if save_model_every or create_image_every:
         assert log_directory, "Log directory is empty"
 
+
 def train_embedding(embedding_name, learn_rate, batch_size, gradient_step, data_root, log_directory, training_width, training_height, steps, shuffle_tags, tag_drop_out, latent_sampling_method, create_image_every, save_embedding_every, template_file, save_image_with_stored_embedding, preview_from_txt2img, preview_prompt, preview_negative_prompt, preview_steps, preview_sampler_index, preview_cfg_scale, preview_seed, preview_width, preview_height):
     save_embedding_every = save_embedding_every or 0
     create_image_every = create_image_every or 0
@@ -325,7 +326,6 @@ def train_embedding(embedding_name, learn_rate, batch_size, gradient_step, data_
         else:
             print("No saved optimizer exists in checkpoint")
 
-
     scaler = torch.cuda.amp.GradScaler()
 
     batch_size = ds.batch_size
@@ -340,6 +340,9 @@ def train_embedding(embedding_name, learn_rate, batch_size, gradient_step, data_
     last_saved_image = "<none>"
     forced_filename = "<none>"
     embedding_yet_to_be_embedded = False
+
+    is_training_inpainting_model = shared.sd_model.model.conditioning_key in {'hybrid', 'concat'}
+    img_c = None
 
     pbar = tqdm.tqdm(total=steps - initial_step)
     try:
@@ -359,13 +362,18 @@ def train_embedding(embedding_name, learn_rate, batch_size, gradient_step, data_
                     break
 
                 with devices.autocast():
-                    # c = stack_conds(batch.cond).to(devices.device)
-                    # mask = torch.tensor(batch.emb_index).to(devices.device, non_blocking=pin_memory)
-                    # print(mask)
-                    # c[:, 1:1+embedding.vec.shape[0]] = embedding.vec.to(devices.device, non_blocking=pin_memory)
                     x = batch.latent_sample.to(devices.device, non_blocking=pin_memory)
                     c = shared.sd_model.cond_stage_model(batch.cond_text)
-                    loss = shared.sd_model(x, c)[0] / gradient_step
+
+                    if is_training_inpainting_model:
+                        if img_c is None:
+                            img_c = processing.txt2img_image_conditioning(shared.sd_model, c, training_width, training_height)
+
+                        cond = {"c_concat": [img_c], "c_crossattn": [c]}
+                    else:
+                        cond = c
+
+                    loss = shared.sd_model(x, cond)[0] / gradient_step
                     del x
 
                     _loss_step += loss.item()
