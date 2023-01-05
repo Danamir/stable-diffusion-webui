@@ -50,9 +50,9 @@ def apply_color_correction(correction, original_image):
         correction,
         channel_axis=2
     ), cv2.COLOR_LAB2RGB).astype("uint8"))
-    
+
     image = blendLayers(image, original_image, BlendType.LUMINOSITY)
-    
+
     return image
 
 
@@ -466,9 +466,15 @@ def process_images(p: StableDiffusionProcessing) -> Processed:
     try:
         for k, v in p.override_settings.items():
             setattr(opts, k, v)
-            if k == 'sd_hypernetwork': shared.reload_hypernetworks()  # make onchange call for changing hypernet
-            if k == 'sd_model_checkpoint': sd_models.reload_model_weights()  # make onchange call for changing SD model
-            if k == 'sd_vae': sd_vae.reload_vae_weights()  # make onchange call for changing VAE
+            if k == 'sd_hypernetwork':
+                shared.reload_hypernetworks()  # make onchange call for changing hypernet
+
+            if k == 'sd_model_checkpoint':
+                sd_models.reload_model_weights()  # make onchange call for changing SD model
+                p.sd_model = shared.sd_model
+
+            if k == 'sd_vae':
+                sd_vae.reload_vae_weights()  # make onchange call for changing VAE
 
         res = process_images_inner(p)
 
