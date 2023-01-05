@@ -157,7 +157,7 @@ def run_extensions_installers(settings_file):
         run_extension_installer(os.path.join(dir_extensions, dirname_extension))
 
 
-def prepare_enviroment():
+def prepare_environment():
     torch_command = os.environ.get('TORCH_COMMAND', "pip install torch==1.12.1+cu113 torchvision==0.13.1+cu113 --extra-index-url https://download.pytorch.org/whl/cu113")
     requirements_file = os.environ.get('REQS_FILE', "requirements_versions.txt")
     commandline_args = os.environ.get('COMMANDLINE_ARGS', "")
@@ -186,6 +186,7 @@ def prepare_enviroment():
     parser.add_argument("--ui-settings-file", type=str, help="filename to use for ui settings", default='config.json')
     args, _ = parser.parse_known_args(sys.argv)
 
+    sys.argv, _ = extract_arg(sys.argv, '-f')
     sys.argv, skip_torch_cuda_test = extract_arg(sys.argv, '--skip-torch-cuda-test')
     sys.argv, reinstall_xformers = extract_arg(sys.argv, '--reinstall-xformers')
     sys.argv, update_check = extract_arg(sys.argv, '--update-check')
@@ -290,5 +291,5 @@ def start():
 
 
 if __name__ == "__main__":
-    prepare_enviroment()
+    prepare_environment()
     start()

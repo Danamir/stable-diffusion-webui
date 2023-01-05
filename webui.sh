@@ -1,8 +1,16 @@
-#!/bin/bash
+#!/usr/bin/env bash
 #################################################
 # Please do not make any changes to this file,  #
 # change the variables in webui-user.sh instead #
 #################################################
+
+# If run from macOS, load defaults from webui-macos-env.sh
+if [[ "$OSTYPE" == "darwin"* ]]; then
+    if [[ -f webui-macos-env.sh ]]
+        then
+        source ./webui-macos-env.sh
+    fi
+fi
 
 # Read variables from webui-user.sh
 # shellcheck source=/dev/null
@@ -51,10 +59,11 @@ fi
 can_run_as_root=0
 
 # read any command line flags to the webui.sh script
-while getopts "f" flag
+while getopts "f" flag > /dev/null 2>&1
 do
     case ${flag} in
         f) can_run_as_root=1;;
+        *) break;;
     esac
 done
 

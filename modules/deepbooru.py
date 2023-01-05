@@ -21,7 +21,7 @@ class DeepDanbooru:
         files = modelloader.load_models(
             model_path=os.path.join(paths.models_path, "torch_deepdanbooru"),
             model_url='https://github.com/AUTOMATIC1111/TorchDeepDanbooru/releases/download/v1/model-resnet_custom_v3.pt',
-            ext_filter=".pt",
+            ext_filter=[".pt"],
             download_name='model-resnet_custom_v3.pt',
         )
 
@@ -79,7 +79,9 @@ class DeepDanbooru:
 
         res = []
 
-        for tag in tags:
+        filtertags = set([x.strip().replace(' ', '_') for x in shared.opts.deepbooru_filter_tags.split(",")])
+
+        for tag in [x for x in tags if x not in filtertags]:
             probability = probability_dict[tag]
             tag_outformat = tag
             if use_spaces:

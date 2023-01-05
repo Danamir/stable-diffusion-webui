@@ -28,9 +28,9 @@ class DatasetEntry:
 
 
 class PersonalizedBase(Dataset):
-    def __init__(self, data_root, width, height, repeats, flip_p=0.5, placeholder_token="*", model=None, cond_model=None, device=None, template_file=None, include_cond=False, batch_size=1, gradient_step=1, shuffle_tags=False, tag_drop_out=0, latent_sampling_method='once'):        
+    def __init__(self, data_root, width, height, repeats, flip_p=0.5, placeholder_token="*", model=None, cond_model=None, device=None, template_file=None, include_cond=False, batch_size=1, gradient_step=1, shuffle_tags=False, tag_drop_out=0, latent_sampling_method='once'):
         re_word = re.compile(shared.opts.dataset_filename_word_regex) if len(shared.opts.dataset_filename_word_regex) > 0 else None
-        
+
         self.placeholder_token = placeholder_token
 
         self.width = width
@@ -50,14 +50,14 @@ class PersonalizedBase(Dataset):
 
         self.image_paths = [os.path.join(data_root, file_path) for file_path in os.listdir(data_root)]
 
-        
+
         self.shuffle_tags = shuffle_tags
         self.tag_drop_out = tag_drop_out
 
         print("Preparing dataset...")
         for path in tqdm.tqdm(self.image_paths):
             if shared.state.interrupted:
-                raise Exception("inturrupted")
+                raise Exception("interrupted")
             try:
                 image = Image.open(path).convert('RGB').resize((self.width, self.height), PIL.Image.BICUBIC)
             except Exception:
@@ -82,7 +82,7 @@ class PersonalizedBase(Dataset):
             torchdata = torch.from_numpy(npimage).permute(2, 0, 1).to(device=device, dtype=torch.float32)
             latent_sample = None
 
-            with torch.autocast("cuda"):
+            with devices.autocast():
                 latent_dist = model.encode_first_stage(torchdata.unsqueeze(dim=0))
 
             if latent_sampling_method == "once" or (latent_sampling_method == "deterministic" and not isinstance(latent_dist, DiagonalGaussianDistribution)):
@@ -101,7 +101,7 @@ class PersonalizedBase(Dataset):
                 entry.cond_text = self.create_text(filename_text)
 
             if include_cond and not (self.tag_drop_out != 0 or self.shuffle_tags):
-                with torch.autocast("cuda"):
+                with devices.autocast():
                     entry.cond = cond_model([entry.cond_text]).to(devices.cpu).squeeze(0)
 
             self.dataset.append(entry)
@@ -144,7 +144,7 @@ class PersonalizedDataLoader(DataLoader):
             self.collate_fn = collate_wrapper_random
         else:
             self.collate_fn = collate_wrapper
-        
+
 
 class BatchLoader:
     def __init__(self, data):
