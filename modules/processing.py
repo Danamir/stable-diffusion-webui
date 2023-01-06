@@ -16,6 +16,7 @@ import modules.sd_hijack
 from modules import devices, prompt_parser, masking, sd_samplers, lowvram, generation_parameters_copypaste, script_callbacks
 from modules.sd_hijack import model_hijack
 from modules.shared import opts, cmd_opts, state
+from modules.sdu_upscale_mod import run_sdu_latent_upscale
 import modules.shared as shared
 import modules.face_restoration
 import modules.images as images
@@ -793,11 +794,20 @@ class StableDiffusionProcessingTxt2Img(StableDiffusionProcessing):
             info = create_infotext(self, self.all_prompts, self.all_seeds, self.all_subseeds, [], iteration=self.iteration, position_in_batch=index)
             images.save_image(image, self.outpath_samples, "", seeds[index], prompts[index], opts.samples_format, info=info, suffix="-before-highres-fix")
 
+        # if latent_scale_mode is not None:
+        #     for i in range(samples.shape[0]):
+        #         save_intermediate(samples, i)
+        #
+        #     samples = torch.nn.functional.interpolate(samples, size=(target_height // opt_f, target_width // opt_f), mode=latent_scale_mode["mode"], antialias=latent_scale_mode["antialias"])
+
         if latent_scale_mode is not None:
             for i in range(samples.shape[0]):
                 save_intermediate(samples, i)
 
-            samples = torch.nn.functional.interpolate(samples, size=(target_height // opt_f, target_width // opt_f), mode=latent_scale_mode["mode"], antialias=latent_scale_mode["antialias"])
+            #samples = torch.nn.functional.interpolate(samples, size=(target_height // opt_f, target_width // opt_f), mode=latent_scale_mode["mode"], antialias=latent_scale_mode["antialias"])
+
+            print(f"UPSCALING-1 - [{self.height} x {self.width}] [{target_height} x {target_width}]")
+            samples=run_sdu_latent_upscale(samples,prompts[0], size=(self.height // opt_f, self.width // opt_f) )
 
             # Avoid making the inpainting conditioning unless necessary as
             # this does need some extra compute to decode / encode the image again.
