@@ -1840,5 +1840,5 @@ xformers: {xformers_version}
  • 
 gradio: {gr.__version__}
  • 
-commit: <a href="https://gitgud.io/AUTOMATIC1111/stable-diffusion-webui/-/commit/{commit}">{short_commit}</a>
+commit: <a href="https://github.com/AUTOMATIC1111/stable-diffusion-webui/commit/{commit}">{short_commit}</a>
 """
