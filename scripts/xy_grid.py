@@ -263,14 +263,12 @@ class SharedSettingsStackHelper(object):
     def __enter__(self):
         self.CLIP_stop_at_last_layers = opts.CLIP_stop_at_last_layers
         self.hypernetwork = opts.sd_hypernetwork
-        self.model = shared.sd_model
         self.vae = opts.sd_vae
   
     def __exit__(self, exc_type, exc_value, tb):
-        modules.sd_models.reload_model_weights(self.model)
-
         opts.data["sd_vae"] = self.vae
-        modules.sd_vae.reload_vae_weights(self.model)
+        modules.sd_models.reload_model_weights()
+        modules.sd_vae.reload_vae_weights()
 
         hypernetwork.load_hypernetwork(self.hypernetwork)
         hypernetwork.apply_strength()
@@ -406,6 +404,9 @@ class Script(scripts.Script):
         grid_infotext = [None]
 
         def cell(x, y):
+            if shared.state.interrupted:
+                return Processed(p, [], p.seed, "")
+
             pc = copy(p)
             x_opt.apply(pc, x, xs)
             y_opt.apply(pc, y, ys)
