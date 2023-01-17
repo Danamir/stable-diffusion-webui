@@ -644,7 +644,7 @@ canvas[key="mask"] {
     max-width: 2.5em;
     min-width: 2.5em !important;
     height: 2.4em;
-    margin: 0.55em 0;
+    margin: 0.55em 0.7em 0.55em 0;
 }
 
 #quicksettings .gr-button-tool{
