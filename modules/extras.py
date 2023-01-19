@@ -275,7 +275,14 @@ def create_config(ckpt_result, config_source, a, b, c):
     shutil.copyfile(cfg, checkpoint_filename)
 
 
-chckpoint_dict_skip_on_merge = ["cond_stage_model.transformer.text_model.embeddings.position_ids"]
+checkpoint_dict_skip_on_merge = ["cond_stage_model.transformer.text_model.embeddings.position_ids"]
+
+
+def to_half(tensor, enable):
+    if enable and tensor.dtype == torch.float:
+        return tensor.half()
+
+    return tensor
 
 
 def run_modelmerger(id_task, primary_model_name, secondary_model_name, tertiary_model_name, interp_method, multiplier, save_as_half, custom_name, checkpoint_format, config_source, bake_in_vae):
@@ -296,7 +303,7 @@ def run_modelmerger(id_task, primary_model_name, secondary_model_name, tertiary_
     def add_difference(theta0, theta1_2_diff, alpha):
         return theta0 + (alpha * theta1_2_diff)
 
-    def filename_weighed_sum():
+    def filename_weighted_sum():
         a = primary_model_info.model_name
         b = secondary_model_info.model_name
         Ma = round(1 - multiplier, 2)
@@ -304,7 +311,7 @@ def run_modelmerger(id_task, primary_model_name, secondary_model_name, tertiary_
 
         return f"{Ma}({a}) + {Mb}({b})"
 
-    def filename_add_differnece():
+    def filename_add_difference():
         a = primary_model_info.model_name
         b = secondary_model_info.model_name
         c = tertiary_model_info.model_name
@@ -316,8 +323,8 @@ def run_modelmerger(id_task, primary_model_name, secondary_model_name, tertiary_
         return primary_model_info.model_name
 
     theta_funcs = {
-        "Weighted sum": (filename_weighed_sum, None, weighted_sum),
-        "Add difference": (filename_add_differnece, get_difference, add_difference),
+        "Weighted sum": (filename_weighted_sum, None, weighted_sum),
+        "Add difference": (filename_add_difference, get_difference, add_difference),
         "No interpolation": (filename_nothing, None, None),
     }
     filename_generator, theta_func1, theta_func2 = theta_funcs[interp_method]
@@ -355,7 +362,7 @@ def run_modelmerger(id_task, primary_model_name, secondary_model_name, tertiary_
         shared.state.textinfo = 'Merging B and C'
         shared.state.sampling_steps = len(theta_1.keys())
         for key in tqdm.tqdm(theta_1.keys()):
-            if key in chckpoint_dict_skip_on_merge:
+            if key in checkpoint_dict_skip_on_merge:
                 continue
 
             if 'model' in key:
@@ -380,7 +387,7 @@ def run_modelmerger(id_task, primary_model_name, secondary_model_name, tertiary_
     for key in tqdm.tqdm(theta_0.keys()):
         if theta_1 and 'model' in key and key in theta_1:
 
-            if key in chckpoint_dict_skip_on_merge:
+            if key in checkpoint_dict_skip_on_merge:
                 continue
 
             a = theta_0[key]
@@ -400,8 +407,7 @@ def run_modelmerger(id_task, primary_model_name, secondary_model_name, tertiary_
             else:
                 theta_0[key] = theta_func2(a, b, multiplier)
 
-            if save_as_half:
-                theta_0[key] = theta_0[key].half()
+            theta_0[key] = to_half(theta_0[key], save_as_half)
 
         shared.state.sampling_step += 1
 
@@ -416,9 +422,13 @@ def run_modelmerger(id_task, primary_model_name, secondary_model_name, tertiary_
         for key in vae_dict.keys():
             theta_0_key = 'first_stage_model.' + key
             if theta_0_key in theta_0:
-                theta_0[theta_0_key] = vae_dict[key].half() if save_as_half else vae_dict[key]
+                theta_0[theta_0_key] = to_half(vae_dict[key], save_as_half)
 
         del vae_dict
+
+    if save_as_half and not theta_func2:
+        for key in theta_0.keys():
+            theta_0[key] = to_half(theta_0[key], save_as_half)
 
     ckpt_dir = shared.cmd_opts.ckpt_dir or sd_models.model_path
 
