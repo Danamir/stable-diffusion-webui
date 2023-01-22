@@ -707,11 +707,15 @@ footer {
 
 #txt2img_checkboxes, #img2img_checkboxes{
     margin-bottom: 0.5em;
+    margin-left: 0em;
 }
 #txt2img_checkboxes > div, #img2img_checkboxes > div{
     flex: 0;
     white-space: nowrap;
     min-width: auto;
+}
+#txt2img_hires_fix{
+    margin-left: -0.8em;
 }
 
 .inactive{
@@ -771,6 +775,14 @@ footer {
 }
 
 .extra-networks > div > [id *= '_extra_']{
+    margin: 0.3em;
+}
+
+
+
+#txt2img_extra_networks .search, #img2img_extra_networks .search{
+    display: inline-block;
+    max-width: 16em;
     margin: 0.3em;
 }
 
