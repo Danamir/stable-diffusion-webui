@@ -165,7 +165,12 @@ def webui():
         if shared.opts.clean_temp_dir_at_start:
             ui_tempdir.cleanup_tmpdr()
 
+        modules.script_callbacks.before_ui_callback()
+
         shared.demo = modules.ui.create_ui()
+
+        if cmd_opts.gradio_queue:
+            shared.demo.queue(64)
 
         app, local_url, share_url = shared.demo.launch(
             share=cmd_opts.share,

@@ -140,6 +140,7 @@ class StableDiffusionProcessing:
         self.override_settings = {k: v for k, v in (override_settings or {}).items() if k not in shared.restricted_opts}
         self.override_settings_restore_afterwards = override_settings_restore_afterwards
         self.is_using_inpainting_conditioning = False
+        self.disable_extra_networks = False
 
         if not seed_enable_extras:
             self.subseed = -1
@@ -532,6 +533,8 @@ def process_images_inner(p: StableDiffusionProcessing) -> Processed:
     if os.path.exists(cmd_opts.embeddings_dir) and not p.do_not_reload_embeddings:
         model_hijack.embedding_db.load_textual_inversion_embeddings()
 
+    _, extra_network_data = extra_networks.parse_prompts(p.all_prompts[0:1])
+
     if p.scripts is not None:
         p.scripts.process(p)
 
@@ -561,13 +564,12 @@ def process_images_inner(p: StableDiffusionProcessing) -> Processed:
         cache[0] = (required_prompts, steps)
         return cache[1]
 
-    p.all_prompts, extra_network_data = extra_networks.parse_prompts(p.all_prompts)
-
     with torch.no_grad(), p.sd_model.ema_scope():
         with devices.autocast():
             p.init(p.all_prompts, p.all_seeds, p.all_subseeds)
 
-            extra_networks.activate(p, extra_network_data)
+            if not p.disable_extra_networks:
+                extra_networks.activate(p, extra_network_data)
 
         with open(os.path.join(shared.script_path, "params.txt"), "w", encoding="utf8") as file:
             processed = Processed(p, [], p.seed, "")
@@ -592,6 +594,8 @@ def process_images_inner(p: StableDiffusionProcessing) -> Processed:
 
             if len(prompts) == 0:
                 break
+
+            prompts, _ = extra_networks.parse_prompts(prompts)
 
             if p.scripts is not None:
                 p.scripts.process_batch(p, batch_number=n, prompts=prompts, seeds=seeds, subseeds=subseeds)
@@ -682,7 +686,9 @@ def process_images_inner(p: StableDiffusionProcessing) -> Processed:
             if opts.grid_save:
                 images.save_image(grid, p.outpath_grids, "grid", p.all_seeds[0], p.all_prompts[0], opts.grid_format, info=infotext(), short_filename=not opts.grid_extended_filename, p=p, grid=True)
 
-    extra_networks.deactivate(p, extra_network_data)
+    if not p.disable_extra_networks:
+        extra_networks.deactivate(p, extra_network_data)
+
     devices.torch_gc()
 
     res = Processed(p, output_images, p.all_seeds[0], infotext(), comments="".join(["\n\n" + x for x in comments]), subseed=p.all_subseeds[0], index_of_first_image=index_of_first_image, infotexts=infotexts)
