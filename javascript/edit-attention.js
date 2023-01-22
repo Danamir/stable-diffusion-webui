@@ -1,6 +1,6 @@
 addEventListener('keydown', (event) => {
 	let target = event.originalTarget || event.composedPath()[0];
-	if (!target.matches("#toprow textarea.gr-text-input[placeholder]")) return;
+	if (!target.matches("[id*='_toprow'] textarea.gr-text-input[placeholder]")) return;
 	if (! (event.metaKey || event.ctrlKey)) return;
 
 
@@ -69,7 +69,6 @@ addEventListener('keydown', (event) => {
 		target.selectionStart = selectionStart;
 		target.selectionEnd = selectionEnd;
 	}
-	// Since we've modified a Gradio Textbox component manually, we need to simulate an `input` DOM event to ensure its
-	// internal Svelte data binding remains in sync.
-	target.dispatchEvent(new Event("input", { bubbles: true }));
+
+	updateInput(target)
 });

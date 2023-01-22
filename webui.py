@@ -4,16 +4,23 @@ import threading
 import time
 import importlib
 import signal
-import threading
+import re
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 
-from modules import import_hook, errors
+from modules import import_hook, errors, extra_networks
+from modules import extra_networks_hypernet, ui_extra_networks_hypernets, ui_extra_networks_textual_inversion
 from modules.call_queue import wrap_queued_call, queue_lock, wrap_gradio_gpu_call
 from modules.paths import script_path
 
-from modules import shared, devices, sd_samplers, upscaler, extensions, localization, ui_tempdir
+import torch
+
+# Truncate version number of nightly/local build of PyTorch to not cause exceptions with CodeFormer or Safetensors
+if ".dev" in torch.__version__ or "+git" in torch.__version__:
+    torch.__version__ = re.search(r'[\d.]+[\d]', torch.__version__).group(0)
+
+from modules import shared, devices, sd_samplers, upscaler, extensions, localization, ui_tempdir, ui_extra_networks
 import modules.codeformer_model as codeformer
 import modules.extras
 import modules.face_restoration
@@ -28,6 +35,8 @@ import modules.sd_models
 import modules.sd_vae
 import modules.txt2img
 import modules.script_callbacks
+import modules.textual_inversion.textual_inversion
+import modules.progress
 
 import modules.ui
 from modules import modelloader
@@ -62,6 +71,8 @@ def initialize():
 
     modules.sd_vae.refresh_vae_list()
 
+    modules.textual_inversion.textual_inversion.list_textual_inversion_templates()
+
     try:
         modules.sd_models.load_model()
     except Exception as e:
@@ -70,12 +81,21 @@ def initialize():
         print("Stable diffusion model failed to load, exiting", file=sys.stderr)
         exit(1)
 
+    shared.opts.data["sd_model_checkpoint"] = shared.sd_model.sd_checkpoint_info.title
+
     shared.opts.onchange("sd_model_checkpoint", wrap_queued_call(lambda: modules.sd_models.reload_model_weights()))
     shared.opts.onchange("sd_vae", wrap_queued_call(lambda: modules.sd_vae.reload_vae_weights()), call=False)
     shared.opts.onchange("sd_vae_as_default", wrap_queued_call(lambda: modules.sd_vae.reload_vae_weights()), call=False)
-    shared.opts.onchange("sd_hypernetwork", wrap_queued_call(lambda: shared.reload_hypernetworks()))
-    shared.opts.onchange("sd_hypernetwork_strength", modules.hypernetworks.hypernetwork.apply_strength)
     shared.opts.onchange("temp_dir", ui_tempdir.on_tmpdir_changed)
+
+    shared.reload_hypernetworks()
+
+    ui_extra_networks.intialize()
+    ui_extra_networks.register_page(ui_extra_networks_textual_inversion.ExtraNetworksPageTextualInversion())
+    ui_extra_networks.register_page(ui_extra_networks_hypernets.ExtraNetworksPageHypernetworks())
+
+    extra_networks.initialize()
+    extra_networks.register_extra_network(extra_networks_hypernet.ExtraNetworkHypernet())
 
     if cmd_opts.tls_keyfile is not None and cmd_opts.tls_keyfile is not None:
 
@@ -147,7 +167,7 @@ def webui():
 
         shared.demo = modules.ui.create_ui()
 
-        app, local_url, share_url = shared.demo.queue(default_enabled=False).launch(
+        app, local_url, share_url = shared.demo.launch(
             share=cmd_opts.share,
             server_name=server_name,
             server_port=cmd_opts.port,
@@ -171,10 +191,11 @@ def webui():
 
         app.add_middleware(GZipMiddleware, minimum_size=1000)
 
+        modules.progress.setup_progress_api(app)
+
         if launch_api:
             create_api(app)
 
-        modules.script_callbacks.app_started_callback(shared.demo, app)
         modules.script_callbacks.app_started_callback(shared.demo, app)
 
         wait_on_server(shared.demo)
@@ -182,18 +203,29 @@ def webui():
 
         sd_samplers.set_samplers()
 
+        modules.script_callbacks.script_unloaded_callback()
         extensions.list_extensions()
 
         localization.list_localizations(cmd_opts.localizations_dir)
 
         modelloader.forbid_loaded_nonbuiltin_upscalers()
         modules.scripts.reload_scripts()
+        modules.script_callbacks.model_loaded_callback(shared.sd_model)
         modelloader.load_upscalers()
 
         for module in [module for name, module in sys.modules.items() if name.startswith("modules.ui")]:
             importlib.reload(module)
 
         modules.sd_models.list_models()
+
+        shared.reload_hypernetworks()
+
+        ui_extra_networks.intialize()
+        ui_extra_networks.register_page(ui_extra_networks_textual_inversion.ExtraNetworksPageTextualInversion())
+        ui_extra_networks.register_page(ui_extra_networks_hypernets.ExtraNetworksPageHypernetworks())
+
+        extra_networks.initialize()
+        extra_networks.register_extra_network(extra_networks_hypernet.ExtraNetworkHypernet())
 
 
 if __name__ == "__main__":

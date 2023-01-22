@@ -1,4 +1,5 @@
 import os
+import re
 import sys
 import traceback
 from collections import namedtuple
@@ -128,6 +129,15 @@ class Script:
         """unused"""
         return ""
 
+    def elem_id(self, item_id):
+        """helper function to generate id for a HTML element, constructs final id out of script name, tab and user-supplied item_id"""
+
+        need_tabname = self.show(True) == self.show(False)
+        tabname = ('img2img' if self.is_img2img else 'txt2txt') + "_" if need_tabname else ""
+        title = re.sub(r'[^a-z_0-9]', '', re.sub(r'\s', '_', self.title().lower()))
+
+        return f'script_{tabname}{title}_{item_id}'
+
 
 current_basedir = paths.script_path
 
@@ -142,7 +152,7 @@ def basedir():
 
 scripts_data = []
 ScriptFile = namedtuple("ScriptFile", ["basedir", "filename", "path"])
-ScriptClassData = namedtuple("ScriptClassData", ["script_class", "path", "basedir"])
+ScriptClassData = namedtuple("ScriptClassData", ["script_class", "path", "basedir", "module"])
 
 
 def list_scripts(scriptdirname, extension):
@@ -196,7 +206,7 @@ def load_scripts():
 
             for key, script_class in module.__dict__.items():
                 if type(script_class) == type and issubclass(script_class, Script):
-                    scripts_data.append(ScriptClassData(script_class, scriptfile.path, scriptfile.basedir))
+                    scripts_data.append(ScriptClassData(script_class, scriptfile.path, scriptfile.basedir, module))
 
         except Exception:
             print(f"Error loading script: {scriptfile.filename}", file=sys.stderr)
@@ -231,7 +241,7 @@ class ScriptRunner:
         self.alwayson_scripts.clear()
         self.selectable_scripts.clear()
 
-        for script_class, path, basedir in scripts_data:
+        for script_class, path, basedir, script_module in scripts_data:
             script = script_class()
             script.filename = path
             script.is_txt2img = not is_img2img
@@ -280,7 +290,6 @@ class ScriptRunner:
             script.group = group
 
         dropdown = gr.Dropdown(label="Script", elem_id="script_list", choices=["None"] + self.titles, value="None", type="index")
-        dropdown.save_to_config = True
         inputs[0] = dropdown
 
         for script in self.selectable_scripts:

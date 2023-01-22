@@ -11,10 +11,10 @@ from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from secrets import compare_digest
 
 import modules.shared as shared
-from modules import sd_samplers, deepbooru, sd_hijack
+from modules import sd_samplers, deepbooru, sd_hijack, images, scripts, ui
 from modules.api.models import *
 from modules.processing import StableDiffusionProcessingTxt2Img, StableDiffusionProcessingImg2Img, process_images
-from modules.extras import run_extras, run_pnginfo
+from modules.extras import run_extras
 from modules.textual_inversion.textual_inversion import create_embedding, train_embedding
 from modules.textual_inversion.preprocess import preprocess
 from modules.hypernetworks.hypernetwork import create_hypernetwork, train_hypernetwork
@@ -28,8 +28,13 @@ def upscaler_to_index(name: str):
     try:
         return [x.name.lower() for x in shared.sd_upscalers].index(name.lower())
     except:
-        raise HTTPException(status_code=400, detail=f"Invalid upscaler, needs to be on of these: {' , '.join([x.name for x in sd_upscalers])}")
+        raise HTTPException(status_code=400, detail=f"Invalid upscaler, needs to be one of these: {' , '.join([x.name for x in sd_upscalers])}")
 
+def script_name_to_index(name, scripts):
+    try:
+        return [script.title().lower() for script in scripts].index(name.lower())
+    except:
+        raise HTTPException(status_code=422, detail=f"Script '{name}' not found")
 
 def validate_sampler_name(name):
     config = sd_samplers.all_samplers_map.get(name, None)
@@ -121,8 +126,6 @@ class Api:
         self.add_api_route("/sdapi/v1/face-restorers", self.get_face_restorers, methods=["GET"], response_model=List[FaceRestorerItem])
         self.add_api_route("/sdapi/v1/realesrgan-models", self.get_realesrgan_models, methods=["GET"], response_model=List[RealesrganItem])
         self.add_api_route("/sdapi/v1/prompt-styles", self.get_prompt_styles, methods=["GET"], response_model=List[PromptStyleItem])
-        self.add_api_route("/sdapi/v1/artist-categories", self.get_artists_categories, methods=["GET"], response_model=List[str])
-        self.add_api_route("/sdapi/v1/artists", self.get_artists, methods=["GET"], response_model=List[ArtistItem])
         self.add_api_route("/sdapi/v1/embeddings", self.get_embeddings, methods=["GET"], response_model=EmbeddingsResponse)
         self.add_api_route("/sdapi/v1/refresh-checkpoints", self.refresh_checkpoints, methods=["POST"])
         self.add_api_route("/sdapi/v1/create/embedding", self.create_embedding, methods=["POST"], response_model=CreateResponse)
@@ -130,6 +133,7 @@ class Api:
         self.add_api_route("/sdapi/v1/preprocess", self.preprocess, methods=["POST"], response_model=PreprocessResponse)
         self.add_api_route("/sdapi/v1/train/embedding", self.train_embedding, methods=["POST"], response_model=TrainResponse)
         self.add_api_route("/sdapi/v1/train/hypernetwork", self.train_hypernetwork, methods=["POST"], response_model=TrainResponse)
+        self.add_api_route("/sdapi/v1/memory", self.get_memory, methods=["GET"], response_model=MemoryResponse)
 
     def add_api_route(self, path: str, endpoint, **kwargs):
         if shared.cmd_opts.api_auth:
@@ -143,7 +147,21 @@ class Api:
 
         raise HTTPException(status_code=401, detail="Incorrect username or password", headers={"WWW-Authenticate": "Basic"})
 
+    def get_script(self, script_name, script_runner):
+        if script_name is None:
+            return None, None
+
+        if not script_runner.scripts:
+            script_runner.initialize_scripts(False)
+            ui.create_ui()
+
+        script_idx = script_name_to_index(script_name, script_runner.selectable_scripts)
+        script = script_runner.selectable_scripts[script_idx]
+        return script, script_idx
+
     def text2imgapi(self, txt2imgreq: StableDiffusionTxt2ImgProcessingAPI):
+        script, script_idx = self.get_script(txt2imgreq.script_name, scripts.scripts_txt2img)
+
         populate = txt2imgreq.copy(update={ # Override __init__ params
             "sampler_name": validate_sampler_name(txt2imgreq.sampler_name or txt2imgreq.sampler_index),
             "do_not_save_samples": True,
@@ -153,13 +171,21 @@ class Api:
         if populate.sampler_name:
             populate.sampler_index = None  # prevent a warning later on
 
+        args = vars(populate)
+        args.pop('script_name', None)
+
         with self.queue_lock:
-            p = StableDiffusionProcessingTxt2Img(sd_model=shared.sd_model, **vars(populate))
+            p = StableDiffusionProcessingTxt2Img(sd_model=shared.sd_model, **args)
 
             shared.state.begin()
-            processed = process_images(p)
+            if script is not None:
+                p.outpath_grids = opts.outdir_txt2img_grids
+                p.outpath_samples = opts.outdir_txt2img_samples
+                p.script_args = [script_idx + 1] + [None] * (script.args_from - 1) + p.script_args
+                processed = scripts.scripts_txt2img.run(p, *p.script_args)
+            else:
+                processed = process_images(p)
             shared.state.end()
-
 
         b64images = list(map(encode_pil_to_base64, processed.images))
 
@@ -169,6 +195,8 @@ class Api:
         init_images = img2imgreq.init_images
         if init_images is None:
             raise HTTPException(status_code=404, detail="Init image not found")
+
+        script, script_idx = self.get_script(img2imgreq.script_name, scripts.scripts_img2img)
 
         mask = img2imgreq.mask
         if mask:
@@ -186,13 +214,20 @@ class Api:
 
         args = vars(populate)
         args.pop('include_init_images', None)  # this is meant to be done by "exclude": True in model, but it's for a reason that I cannot determine.
+        args.pop('script_name', None)
 
         with self.queue_lock:
             p = StableDiffusionProcessingImg2Img(sd_model=shared.sd_model, **args)
             p.init_images = [decode_base64_to_image(x) for x in init_images]
 
             shared.state.begin()
-            processed = process_images(p)
+            if script is not None:
+                p.outpath_grids = opts.outdir_img2img_grids
+                p.outpath_samples = opts.outdir_img2img_samples
+                p.script_args = [script_idx + 1] + [None] * (script.args_from - 1) + p.script_args
+                processed = scripts.scripts_img2img.run(p, *p.script_args)
+            else:
+                processed = process_images(p)
             shared.state.end()
 
         b64images = list(map(encode_pil_to_base64, processed.images))
@@ -233,15 +268,23 @@ class Api:
         if(not req.image.strip()):
             return PNGInfoResponse(info="")
 
-        result = run_pnginfo(decode_base64_to_image(req.image.strip()))
+        image = decode_base64_to_image(req.image.strip())
+        if image is None:
+            return PNGInfoResponse(info="")
 
-        return PNGInfoResponse(info=result[1])
+        geninfo, items = images.read_info_from_image(image)
+        if geninfo is None:
+            geninfo = ""
+
+        items = {**{'parameters': geninfo}, **items}
+
+        return PNGInfoResponse(info=geninfo, items=items)
 
     def progressapi(self, req: ProgressRequest = Depends()):
         # copy from check_progress_call of ui.py
 
         if shared.state.job_count == 0:
-            return ProgressResponse(progress=0, eta_relative=0, state=shared.state.dict())
+            return ProgressResponse(progress=0, eta_relative=0, state=shared.state.dict(), textinfo=shared.state.textinfo)
 
         # avoid dividing zero
         progress = 0.01
@@ -263,7 +306,7 @@ class Api:
         if shared.state.current_image and not req.skip_current_image:
             current_image = encode_pil_to_base64(shared.state.current_image)
 
-        return ProgressResponse(progress=progress, eta_relative=eta_relative, state=shared.state.dict(), current_image=current_image)
+        return ProgressResponse(progress=progress, eta_relative=eta_relative, state=shared.state.dict(), current_image=current_image, textinfo=shared.state.textinfo)
 
     def interrogateapi(self, interrogatereq: InterrogateRequest):
         image_b64 = interrogatereq.image
@@ -326,7 +369,7 @@ class Api:
         return upscalers
 
     def get_sd_models(self):
-        return [{"title":x.title, "model_name":x.model_name, "hash":x.hash, "filename": x.filename, "config": find_checkpoint_config(x)} for x in checkpoints_list.values()]
+        return [{"title": x.title, "model_name": x.model_name, "hash": x.shorthash, "sha256": x.sha256, "filename": x.filename, "config": find_checkpoint_config(x)} for x in checkpoints_list.values()]
 
     def get_hypernetworks(self):
         return [{"name": name, "path": shared.hypernetworks[name]} for name in shared.hypernetworks]
@@ -344,12 +387,6 @@ class Api:
             styleList.append({"name":style[0], "prompt": style[1], "negative_prompt": style[2]})
 
         return styleList
-
-    def get_artists_categories(self):
-        return shared.artist_db.cats
-
-    def get_artists(self):
-        return [{"name":x[0], "score":x[1], "category":x[2]} for x in shared.artist_db.artists]
 
     def get_embeddings(self):
         db = sd_hijack.model_hijack.embedding_db
@@ -435,7 +472,7 @@ class Api:
     def train_hypernetwork(self, args: dict):
         try:
             shared.state.begin()
-            initial_hypernetwork = shared.loaded_hypernetwork
+            shared.loaded_hypernetworks = []
             apply_optimizations = shared.opts.training_xattention_optimizations
             error = None
             filename = ''
@@ -446,16 +483,49 @@ class Api:
             except Exception as e:
                 error = e
             finally:
-                shared.loaded_hypernetwork = initial_hypernetwork
                 shared.sd_model.cond_stage_model.to(devices.device)
                 shared.sd_model.first_stage_model.to(devices.device)
                 if not apply_optimizations:
                     sd_hijack.apply_optimizations()
                 shared.state.end()
-            return TrainResponse(info = "train embedding complete: filename: {filename} error: {error}".format(filename = filename, error = error))
+            return TrainResponse(info="train embedding complete: filename: {filename} error: {error}".format(filename=filename, error=error))
         except AssertionError as msg:
             shared.state.end()
-            return TrainResponse(info = "train embedding error: {error}".format(error = error))
+            return TrainResponse(info="train embedding error: {error}".format(error=error))
+
+    def get_memory(self):
+        try:
+            import os, psutil
+            process = psutil.Process(os.getpid())
+            res = process.memory_info() # only rss is cross-platform guaranteed so we dont rely on other values
+            ram_total = 100 * res.rss / process.memory_percent() # and total memory is calculated as actual value is not cross-platform safe
+            ram = { 'free': ram_total - res.rss, 'used': res.rss, 'total': ram_total }
+        except Exception as err:
+            ram = { 'error': f'{err}' }
+        try:
+            import torch
+            if torch.cuda.is_available():
+                s = torch.cuda.mem_get_info()
+                system = { 'free': s[0], 'used': s[1] - s[0], 'total': s[1] }
+                s = dict(torch.cuda.memory_stats(shared.device))
+                allocated = { 'current': s['allocated_bytes.all.current'], 'peak': s['allocated_bytes.all.peak'] }
+                reserved = { 'current': s['reserved_bytes.all.current'], 'peak': s['reserved_bytes.all.peak'] }
+                active = { 'current': s['active_bytes.all.current'], 'peak': s['active_bytes.all.peak'] }
+                inactive = { 'current': s['inactive_split_bytes.all.current'], 'peak': s['inactive_split_bytes.all.peak'] }
+                warnings = { 'retries': s['num_alloc_retries'], 'oom': s['num_ooms'] }
+                cuda = {
+                    'system': system,
+                    'active': active,
+                    'allocated': allocated,
+                    'reserved': reserved,
+                    'inactive': inactive,
+                    'events': warnings,
+                }
+            else:
+                cuda = { 'error': 'unavailable' }
+        except Exception as err:
+            cuda = { 'error': f'{err}' }
+        return MemoryResponse(ram = ram, cuda = cuda)
 
     def launch(self, server_name, port):
         self.app.include_router(self.router)

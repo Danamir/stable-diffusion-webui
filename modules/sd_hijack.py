@@ -7,8 +7,6 @@ from modules.hypernetworks import hypernetwork
 from modules.shared import cmd_opts
 from modules import sd_hijack_clip, sd_hijack_open_clip, sd_hijack_unet, sd_hijack_xlmr, xlmr
 
-from modules.sd_hijack_optimizations import invokeAI_mps_available
-
 import ldm.modules.attention
 import ldm.modules.diffusionmodules.model
 import ldm.modules.diffusionmodules.openaimodel
@@ -43,20 +41,19 @@ def apply_optimizations():
         ldm.modules.attention.CrossAttention.forward = sd_hijack_optimizations.xformers_attention_forward
         ldm.modules.diffusionmodules.model.AttnBlock.forward = sd_hijack_optimizations.xformers_attnblock_forward
         optimization_method = 'xformers'
+    elif cmd_opts.opt_sub_quad_attention:
+        print("Applying sub-quadratic cross attention optimization.")
+        ldm.modules.attention.CrossAttention.forward = sd_hijack_optimizations.sub_quad_attention_forward
+        ldm.modules.diffusionmodules.model.AttnBlock.forward = sd_hijack_optimizations.sub_quad_attnblock_forward
+        optimization_method = 'sub-quadratic'
     elif cmd_opts.opt_split_attention_v1:
         print("Applying v1 cross attention optimization.")
         ldm.modules.attention.CrossAttention.forward = sd_hijack_optimizations.split_cross_attention_forward_v1
         optimization_method = 'V1'
-    elif not cmd_opts.disable_opt_split_attention and (cmd_opts.opt_split_attention_invokeai or not torch.cuda.is_available()):
-        if not invokeAI_mps_available and shared.device.type == 'mps':
-            print("The InvokeAI cross attention optimization for MPS requires the psutil package which is not installed.")
-            print("Applying v1 cross attention optimization.")
-            ldm.modules.attention.CrossAttention.forward = sd_hijack_optimizations.split_cross_attention_forward_v1
-            optimization_method = 'V1'
-        else:
-            print("Applying cross attention optimization (InvokeAI).")
-            ldm.modules.attention.CrossAttention.forward = sd_hijack_optimizations.split_cross_attention_forward_invokeAI
-            optimization_method = 'InvokeAI'
+    elif not cmd_opts.disable_opt_split_attention and (cmd_opts.opt_split_attention_invokeai or not cmd_opts.opt_split_attention and not torch.cuda.is_available()):
+        print("Applying cross attention optimization (InvokeAI).")
+        ldm.modules.attention.CrossAttention.forward = sd_hijack_optimizations.split_cross_attention_forward_invokeAI
+        optimization_method = 'InvokeAI'
     elif not cmd_opts.disable_opt_split_attention and (cmd_opts.opt_split_attention or torch.cuda.is_available()):
         print("Applying cross attention optimization (Doggettx).")
         ldm.modules.attention.CrossAttention.forward = sd_hijack_optimizations.split_cross_attention_forward
@@ -73,9 +70,10 @@ def undo_optimizations():
 
 
 def fix_checkpoint():
-    ldm.modules.attention.BasicTransformerBlock.forward = sd_hijack_checkpoint.BasicTransformerBlock_forward
-    ldm.modules.diffusionmodules.openaimodel.ResBlock.forward = sd_hijack_checkpoint.ResBlock_forward
-    ldm.modules.diffusionmodules.openaimodel.AttentionBlock.forward = sd_hijack_checkpoint.AttentionBlock_forward
+    """checkpoints are now added and removed in embedding/hypernet code, since torch doesn't want
+    checkpoints to be added when not training (there's a warning)"""
+
+    pass
 
 
 class StableDiffusionModelHijack:
@@ -86,10 +84,12 @@ class StableDiffusionModelHijack:
     clip = None
     optimization_method = None
 
-    embedding_db = modules.textual_inversion.textual_inversion.EmbeddingDatabase(cmd_opts.embeddings_dir)
+    embedding_db = modules.textual_inversion.textual_inversion.EmbeddingDatabase()
+
+    def __init__(self):
+        self.embedding_db.add_embedding_dir(cmd_opts.embeddings_dir)
 
     def hijack(self, m):
-
         if type(m.cond_stage_model) == xlmr.BertSeriesModelWithTransformation:
             model_embeddings = m.cond_stage_model.roberta.embeddings
             model_embeddings.token_embedding = EmbeddingsWithFixes(model_embeddings.word_embeddings, self)
@@ -107,8 +107,6 @@ class StableDiffusionModelHijack:
         self.optimization_method = apply_optimizations()
 
         self.clip = m.cond_stage_model
-        
-        fix_checkpoint()
 
         def flatten(el):
             flattened = [flatten(children) for children in el.children()]
@@ -120,7 +118,6 @@ class StableDiffusionModelHijack:
         self.layers = flatten(m)
 
     def undo_hijack(self, m):
-
         if type(m.cond_stage_model) == xlmr.BertSeriesModelWithTransformation:
             m.cond_stage_model = m.cond_stage_model.wrapped 
 
@@ -150,10 +147,10 @@ class StableDiffusionModelHijack:
     def clear_comments(self):
         self.comments = []
 
-    def tokenize(self, text):
-        _, remade_batch_tokens, _, _, _, token_count = self.clip.process_text([text])
+    def get_prompt_lengths(self, text):
+        _, token_count = self.clip.process_texts([text])
 
-        return remade_batch_tokens[0], token_count, sd_hijack_clip.get_target_prompt_token_count(token_count)
+        return token_count, self.clip.get_target_prompt_token_count(token_count)
 
 
 class EmbeddingsWithFixes(torch.nn.Module):
