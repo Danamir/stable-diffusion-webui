@@ -1,3 +1,4 @@
+import json
 import os
 
 from modules import shared, ui_extra_networks
@@ -18,14 +19,15 @@ class ExtraNetworksPageHypernetworks(ui_extra_networks.ExtraNetworksPage):
             preview = None
             for file in previews:
                 if os.path.isfile(file):
-                    preview = "./file=" + file.replace('\\', '/') + "?mtime=" + str(os.path.getmtime(file))
+                    preview = self.link_preview(file)
                     break
 
             yield {
                 "name": name,
                 "filename": path,
                 "preview": preview,
-                "prompt": f"<hypernet:{name}:1.0>",
+                "search_term": self.search_terms_from_path(path),
+                "prompt": json.dumps(f"<hypernet:{name}:") + " + opts.extra_networks_default_multiplier + " + json.dumps(">"),
                 "local_preview": path + ".png",
             }
 

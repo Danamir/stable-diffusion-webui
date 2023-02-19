@@ -1,3 +1,4 @@
+import json
 import os
 
 from modules import ui_extra_networks, sd_hijack
@@ -18,13 +19,14 @@ class ExtraNetworksPageTextualInversion(ui_extra_networks.ExtraNetworksPage):
 
             preview = None
             if os.path.isfile(preview_file):
-                preview = "./file=" + preview_file.replace('\\', '/') + "?mtime=" + str(os.path.getmtime(preview_file))
+                preview = self.link_preview(preview_file)
 
             yield {
                 "name": embedding.name,
                 "filename": embedding.filename,
                 "preview": preview,
-                "prompt": embedding.name,
+                "search_term": self.search_terms_from_path(embedding.filename),
+                "prompt": json.dumps(embedding.name),
                 "local_preview": path + ".preview.png",
             }
 
