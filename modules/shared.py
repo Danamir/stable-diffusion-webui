@@ -116,7 +116,10 @@ parser.add_argument("--no-download-sd-model", action='store_true', help="don't d
 script_loading.preload_extensions(extensions.extensions_dir, parser)
 script_loading.preload_extensions(extensions.extensions_builtin_dir, parser)
 
-cmd_opts = parser.parse_args()
+if os.environ.get('IGNORE_CMD_ARGS_ERRORS', None) is None:
+    cmd_opts = parser.parse_args()
+else:
+    cmd_opts, _ = parser.parse_known_args()
 
 restricted_opts = {
     "samples_filename_pattern",
@@ -307,6 +310,7 @@ def list_samplers():
 
 
 hide_dirs = {"visible": not cmd_opts.hide_ui_dir_config}
+tab_names = []
 
 options_templates = {}
 
@@ -329,9 +333,11 @@ options_templates.update(options_section(('saving-images', "Saving images/grids"
     "save_images_before_highres_fix": OptionInfo(False, "Save a copy of image before applying highres fix."),
     "save_images_before_color_correction": OptionInfo(False, "Save a copy of image before applying color correction to img2img results"),
     "jpeg_quality": OptionInfo(80, "Quality for saved jpeg images", gr.Slider, {"minimum": 1, "maximum": 100, "step": 1}),
+    "webp_lossless": OptionInfo(False, "Use lossless compression for webp images"),
     "export_for_4chan": OptionInfo(True, "If the saved image file size is above the limit, or its either width or height are above the limit, save a downscaled copy as JPG"),
     "img_downscale_threshold": OptionInfo(4.0, "File size limit for the above option, MB", gr.Number),
     "target_side_length": OptionInfo(4000, "Width/height limit for the above option, in pixels", gr.Number),
+    "img_max_size_mp": OptionInfo(200, "Maximum image size, in megapixels", gr.Number),
 
     "use_original_name_batch": OptionInfo(True, "Use original name for output filename during batch process in extras tab"),
     "use_upscaler_name_as_suffix": OptionInfo(False, "Use upscaler name as filename suffix in the extras tab"),
@@ -442,6 +448,7 @@ options_templates.update(options_section(('interrogate', "Interrogate Options"),
 options_templates.update(options_section(('extra_networks', "Extra Networks"), {
     "extra_networks_default_view": OptionInfo("cards", "Default view for Extra Networks", gr.Dropdown, {"choices": ["cards", "thumbs"]}),
     "extra_networks_default_multiplier": OptionInfo(1.0, "Multiplier for extra networks", gr.Slider, {"minimum": 0.0, "maximum": 1.0, "step": 0.01}),
+    "extra_networks_add_text_separator": OptionInfo(" ", "Extra text to add before <...> when adding extra network to prompt"),
     "sd_hypernetwork": OptionInfo("None", "Add hypernetwork to prompt", gr.Dropdown, lambda: {"choices": [""] + [x for x in hypernetworks.keys()]}, refresh=reload_hypernetworks),
 }))
 
@@ -462,6 +469,7 @@ options_templates.update(options_section(('ui', "User interface"), {
     "keyedit_precision_attention": OptionInfo(0.1, "Ctrl+up/down precision when editing (attention:1.1)", gr.Slider, {"minimum": 0.01, "maximum": 0.2, "step": 0.001}),
     "keyedit_precision_extra": OptionInfo(0.05, "Ctrl+up/down precision when editing <extra networks:0.9>", gr.Slider, {"minimum": 0.01, "maximum": 0.2, "step": 0.001}),
     "quicksettings": OptionInfo("sd_model_checkpoint", "Quicksettings list"),
+    "hidden_tabs": OptionInfo([], "Hidden UI tabs (requires restart)", ui_components.DropdownMulti, lambda: {"choices": [x for x in tab_names]}),
     "ui_reorder": OptionInfo(", ".join(ui_reorder_categories), "txt2img/img2img UI item order"),
     "ui_extra_networks_tab_reorder": OptionInfo("", "Extra networks tab order"),
     "localization": OptionInfo("None", "Localization (requires restart)", gr.Dropdown, lambda: {"choices": ["None"] + list(localization.localizations.keys())}, refresh=lambda: localization.list_localizations(cmd_opts.localizations_dir)),
@@ -706,6 +714,7 @@ class TotalTQDM:
 
     def clear(self):
         if self._tqdm is not None:
+            self._tqdm.refresh()
             self._tqdm.close()
             self._tqdm = None
 
