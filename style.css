@@ -295,6 +295,9 @@ div.dimensions-tools{
     min-width: auto;
 }
 
+.infotext {
+    overflow-wrap: break-word;
+}
 
 /* settings */
 #quicksettings {
