@@ -1,7 +1,7 @@
-## Upcoming 1.2.0
+## 1.2.0
 
 ### Features:
- * do not load wait for stable diffusion model to load at startup
+ * do not wait for stable diffusion model to load at startup
  * add filename patterns: [denoising]
  * directory hiding for extra networks: dirs starting with . will hide their cards on extra network tabs unless specifically searched for
  * Lora: for the `<...>` text in prompt, use name of Lora that is in the metdata of the file, if present, instead of filename (both can be used to activate lora)
@@ -40,6 +40,7 @@
  * Fix MPS on PyTorch 2.0.1, Intel Macs
  * make it so that custom context menu from contextMenu.js only disappears after user's click, ignoring non-user click events
  * prevent Reload UI button/link from reloading the page when it's not yet ready
+ * fix prompts from file script failing to read contents from a drag/drop file
 
 
 ## 1.1.1
