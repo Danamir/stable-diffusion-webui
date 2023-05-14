@@ -1,3 +1,6 @@
+/* temporary fix to load default gradio font in frontend instead of backend */
+
+@import url('https://fonts.googleapis.com/css2?family=Source+Sans+Pro:wght@400;600&display=swap');
 
 /* general gradio fixes */
 
@@ -416,6 +419,26 @@ table.settings-value-table td{
 
 .ui-defaults-none{
     color: #aaa !important;
+}
+
+#settings span{
+    color: var(--body-text-color);
+}
+
+#settings .gradio-textbox, #settings .gradio-slider, #settings .gradio-number, #settings .gradio-dropdown, #settings .gradio-checkboxgroup, #settings .gradio-radio{
+    margin-top: 0.75em;
+}
+
+#settings span .settings-comment {
+    display: inline
+}
+
+.settings-comment a{
+    text-decoration: underline;
+}
+
+.settings-comment .info{
+    opacity: 0.75;
 }
 
 /* live preview */
