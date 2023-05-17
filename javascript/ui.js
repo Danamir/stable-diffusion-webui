@@ -438,4 +438,30 @@ function updateImg2imgResizeToTextAfterChangingImage(){
     }, 500);
 
     return []
+
+}
+
+
+
+function setRandomSeed(elem_id) {
+    var input = gradioApp().querySelector("#" + elem_id + " input");
+    if (!input) return [];
+
+    input.value = "-1";
+    updateInput(input);
+    return [];
+}
+
+function switchWidthHeight(tabname) {
+    var width = gradioApp().querySelector("#" + tabname + "_width input[type=number]");
+    var height = gradioApp().querySelector("#" + tabname + "_height input[type=number]");
+    if (!width || !height) return [];
+
+    var tmp = width.value;
+    width.value = height.value;
+    height.value = tmp;
+
+    updateInput(width);
+    updateInput(height);
+    return [];
 }

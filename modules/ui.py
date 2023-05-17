@@ -189,8 +189,8 @@ def create_seed_inputs(target_interface):
         seed_resize_from_w = gr.Slider(minimum=0, maximum=2048, step=8, label="Resize seed from width", value=0, elem_id=f"{target_interface}_seed_resize_from_w")
         seed_resize_from_h = gr.Slider(minimum=0, maximum=2048, step=8, label="Resize seed from height", value=0, elem_id=f"{target_interface}_seed_resize_from_h")
 
-    random_seed.click(fn=lambda: -1, show_progress=False, inputs=[], outputs=[seed])
-    random_subseed.click(fn=lambda: -1, show_progress=False, inputs=[], outputs=[subseed])
+    random_seed.click(fn=None, _js="function(){setRandomSeed('" + target_interface + "_seed')}", show_progress=False, inputs=[], outputs=[])
+    random_subseed.click(fn=None, _js="function(){setRandomSeed('" + target_interface + "_subseed')}", show_progress=False, inputs=[], outputs=[])
 
     def change_visibility(show):
         return {comp: gr_show(show) for comp in seed_extras}
@@ -574,7 +574,7 @@ def create_ui():
             txt2img_prompt.submit(**txt2img_args)
             submit.click(**txt2img_args)
 
-            res_switch_btn.click(lambda w, h: (h, w), inputs=[width, height], outputs=[width, height], show_progress=False)
+            res_switch_btn.click(fn=None, _js="function(){switchWidthHeight('txt2img')}", inputs=None, outputs=None, show_progress=False)
 
             restore_progress_button.click(
                 fn=progress.restore_progress,
@@ -951,7 +951,8 @@ def create_ui():
 
             img2img_prompt.submit(**img2img_args)
             submit.click(**img2img_args)
-            res_switch_btn.click(lambda w, h: (h, w), inputs=[width, height], outputs=[width, height], show_progress=False)
+
+            res_switch_btn.click(fn=None, _js="function(){switchWidthHeight('img2img')}", inputs=None, outputs=None, show_progress=False)
 
             restore_progress_button.click(
                 fn=progress.restore_progress,
@@ -1611,12 +1612,8 @@ def create_ui():
             outputs=[]
         )
 
-        def request_restart():
-            shared.state.interrupt()
-            shared.state.need_restart = True
-
         restart_gradio.click(
-            fn=request_restart,
+            fn=shared.state.request_restart,
             _js='restart_reload',
             inputs=[],
             outputs=[],
@@ -1650,7 +1647,10 @@ def create_ui():
         parameters_copypaste.connect_paste_params_buttons()
 
         with gr.Tabs(elem_id="tabs") as tabs:
-            for interface, label, ifid in interfaces:
+            tab_order = {k: i for i, k in enumerate(opts.ui_tab_order)}
+            sorted_interfaces = sorted(interfaces, key=lambda x: tab_order.get(x[1], 9999))
+
+            for interface, label, ifid in sorted_interfaces:
                 if label in shared.opts.hidden_tabs:
                     continue
                 with gr.TabItem(label, id=ifid, elem_id=f"tab_{ifid}"):

@@ -2,6 +2,7 @@ import datetime
 import json
 import os
 import sys
+import threading
 import time
 
 import gradio as gr
@@ -110,8 +111,47 @@ class State:
     id_live_preview = 0
     textinfo = None
     time_start = None
-    need_restart = False
     server_start = None
+    _server_command_signal = threading.Event()
+    _server_command: str | None = None
+
+    @property
+    def need_restart(self) -> bool:
+        # Compatibility getter for need_restart.
+        return self.server_command == "restart"
+
+    @need_restart.setter
+    def need_restart(self, value: bool) -> None:
+        # Compatibility setter for need_restart.
+        if value:
+            self.server_command = "restart"
+
+    @property
+    def server_command(self):
+        return self._server_command
+
+    @server_command.setter
+    def server_command(self, value: str | None) -> None:
+        """
+        Set the server command to `value` and signal that it's been set.
+        """
+        self._server_command = value
+        self._server_command_signal.set()
+
+    def wait_for_server_command(self, timeout: float | None = None) -> str | None:
+        """
+        Wait for server command to get set; return and clear the value and signal.
+        """
+        if self._server_command_signal.wait(timeout):
+            self._server_command_signal.clear()
+            req = self._server_command
+            self._server_command = None
+            return req
+        return None
+
+    def request_restart(self) -> None:
+        self.interrupt()
+        self.server_command = "restart"
 
     def skip(self):
         self.skipped = True
@@ -338,6 +378,7 @@ options_templates.update(options_section(('system', "System"), {
     "samples_log_stdout": OptionInfo(False, "Always print all generation info to standard output"),
     "multiple_tqdm": OptionInfo(True, "Add a second progress bar to the console that shows progress for an entire job."),
     "print_hypernet_extra": OptionInfo(False, "Print extra hypernetwork information to console."),
+    "list_hidden_files": OptionInfo(True, "Load models/files in hidden directories").info("directory is hidden if its name starts with \".\""),
 }))
 
 options_templates.update(options_section(('training', "Training"), {
@@ -373,8 +414,13 @@ options_templates.update(options_section(('sd', "Stable Diffusion"), {
     "CLIP_stop_at_last_layers": OptionInfo(1, "Clip skip", gr.Slider, {"minimum": 1, "maximum": 12, "step": 1}).link("wiki", "https://github.com/AUTOMATIC1111/stable-diffusion-webui/wiki/Features#clip-skip").info("ignore last layers of CLIP nrtwork; 1 ignores none, 2 ignores one layer"),
     "upcast_attn": OptionInfo(False, "Upcast cross attention layer to float32"),
     "randn_source": OptionInfo("GPU", "Random number generator source.", gr.Radio, {"choices": ["GPU", "CPU"]}).info("changes seeds drastically; use CPU to produce the same picture across different vidocard vendors"),
+}))
+
+options_templates.update(options_section(('optimizations', "Optimizations"), {
+    "s_min_uncond": OptionInfo(0, "Negative Guidance minimum sigma", gr.Slider, {"minimum": 0.0, "maximum": 4.0, "step": 0.01}).link("PR", "https://github.com/AUTOMATIC1111/stable-diffusion-webui/pull/9177").info("skip negative prompt for some steps when the image is almost ready; 0=disable, higher=faster"),
     "token_merging_ratio": OptionInfo(0.0, "Token merging ratio", gr.Slider, {"minimum": 0.0, "maximum": 0.9, "step": 0.1}).link("PR", "https://github.com/AUTOMATIC1111/stable-diffusion-webui/pull/9256").info("0=disable, higher=faster"),
-    "token_merging_ratio_hr": OptionInfo(0.0, "Togen merging ratio for high-res pass", gr.Slider, {"minimum": 0.0, "maximum": 0.9, "step": 0.1}),
+    "token_merging_ratio_img2img": OptionInfo(0.0, "Token merging ratio for img2img", gr.Slider, {"minimum": 0.0, "maximum": 0.9, "step": 0.1}).info("only applies if non-zero and overrides above"),
+    "token_merging_ratio_hr": OptionInfo(0.0, "Token merging ratio for high-res pass", gr.Slider, {"minimum": 0.0, "maximum": 0.9, "step": 0.1}).info("only applies if non-zero and overrides above"),
 }))
 
 options_templates.update(options_section(('compatibility', "Compatibility"), {
@@ -401,6 +447,8 @@ options_templates.update(options_section(('interrogate', "Interrogate Options"),
 }))
 
 options_templates.update(options_section(('extra_networks', "Extra Networks"), {
+    "extra_networks_show_hidden_directories": OptionInfo(True, "Show hidden directories").info("directory is hidden if its name starts with \".\"."),
+    "extra_networks_hidden_models": OptionInfo("When searched", "Show cards for models in hidden directories", gr.Radio, {"choices": ["Always", "When searched", "Never"]}).info('"When searched" option will only show the item when the search string has 4 characters or more'),
     "extra_networks_default_view": OptionInfo("cards", "Default view for Extra Networks", gr.Dropdown, {"choices": ["cards", "thumbs"]}),
     "extra_networks_default_multiplier": OptionInfo(1.0, "Multiplier for extra networks", gr.Slider, {"minimum": 0.0, "maximum": 1.0, "step": 0.01}),
     "extra_networks_card_width": OptionInfo(0, "Card width for Extra Networks").info("in pixels"),
@@ -430,6 +478,7 @@ options_templates.update(options_section(('ui', "User interface"), {
     "keyedit_precision_extra": OptionInfo(0.05, "Ctrl+up/down precision when editing <extra networks:0.9>", gr.Slider, {"minimum": 0.01, "maximum": 0.2, "step": 0.001}),
     "keyedit_delimiters": OptionInfo(".,\\/!?%^*;:{}=`~()", "Ctrl+up/down word delimiters"),
     "quicksettings_list": OptionInfo(["sd_model_checkpoint"], "Quicksettings list", ui_components.DropdownMulti, lambda: {"choices": list(opts.data_labels.keys())}).js("info", "settingsHintsShowQuicksettings").info("setting entries that appear at the top of page rather than in settings tab").needs_restart(),
+    "ui_tab_order": OptionInfo([], "UI tab order", ui_components.DropdownMulti, lambda: {"choices": list(tab_names)}).needs_restart(),
     "hidden_tabs": OptionInfo([], "Hidden UI tabs", ui_components.DropdownMulti, lambda: {"choices": list(tab_names)}).needs_restart(),
     "ui_reorder": OptionInfo(", ".join(ui_reorder_categories), "txt2img/img2img UI item order"),
     "ui_extra_networks_tab_reorder": OptionInfo("", "Extra networks tab order").needs_restart(),
@@ -458,7 +507,6 @@ options_templates.update(options_section(('sampler-params', "Sampler parameters"
     "eta_ddim": OptionInfo(0.0, "Eta for DDIM", gr.Slider, {"minimum": 0.0, "maximum": 1.0, "step": 0.01}).info("noise multiplier; higher = more unperdictable results"),
     "eta_ancestral": OptionInfo(1.0, "Eta for ancestral samplers", gr.Slider, {"minimum": 0.0, "maximum": 1.0, "step": 0.01}).info("noise multiplier; applies to Euler a and other samplers that have a in them"),
     "ddim_discretize": OptionInfo('uniform', "img2img DDIM discretize", gr.Radio, {"choices": ['uniform', 'quad']}),
-    's_min_uncond': OptionInfo(0, "Negative Guidance minimum sigma", gr.Slider, {"minimum": 0.0, "maximum": 4.0, "step": 0.01}).link("PR", "https://github.com/AUTOMATIC1111/stable-diffusion-webui/pull/9177").info("skip negative prompt for some steps when the image is almost ready; 0=disable, higher=faster"),
     's_churn': OptionInfo(0.0, "sigma churn", gr.Slider, {"minimum": 0.0, "maximum": 1.0, "step": 0.01}),
     's_tmin':  OptionInfo(0.0, "sigma tmin",  gr.Slider, {"minimum": 0.0, "maximum": 1.0, "step": 0.01}),
     's_noise': OptionInfo(1.0, "sigma noise", gr.Slider, {"minimum": 0.0, "maximum": 1.0, "step": 0.01}),
@@ -780,5 +828,8 @@ def walk_files(path, allowed_extensions=None):
                 _, ext = os.path.splitext(filename)
                 if ext not in allowed_extensions:
                     continue
+
+            if not opts.list_hidden_files and ("/." in root or "\\." in root):
+                continue
 
             yield os.path.join(root, filename)

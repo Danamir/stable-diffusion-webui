@@ -66,8 +66,8 @@ titles = {
 
     "Interrogate": "Reconstruct prompt from existing image and put it into the prompt field.",
 
-    "Images filename pattern": "Use following tags to define how filenames for images are chosen: [steps], [cfg], [denoising], [clip_skip], [batch_number], [generation_number], [prompt_hash], [prompt], [prompt_no_styles], [prompt_spaces], [width], [height], [styles], [sampler], [seed], [model_hash], [model_name], [prompt_words], [date], [datetime], [datetime<Format>], [datetime<Format><Time Zone>], [job_timestamp], [hasprompt<prompt1|default><prompt2>..]; leave empty for default.",
-    "Directory name pattern": "Use following tags to define how subdirectories for images and grids are chosen: [steps], [cfg], [denoising], [clip_skip], [batch_number], [generation_number], [prompt_hash], [prompt], [prompt_no_styles], [prompt_spaces], [width], [height], [styles], [sampler], [seed], [model_hash], [model_name], [prompt_words], [date], [datetime], [datetime<Format>], [datetime<Format><Time Zone>], [job_timestamp], [hasprompt<prompt1|default><prompt2>..]; leave empty for default.",
+    "Images filename pattern": "Use tags like [seed] and [date] to define how filenames for images are chosen. Leave empty for default.",
+    "Directory name pattern": "Use tags like [seed] and [date] to define how subdirectories for images and grids are chosen. Leave empty for default.",
     "Max prompt words": "Set the maximum number of words to be used in the [prompt_words] option; ATTENTION: If the words are too long, they may exceed the maximum length of the file path that the system can handle",
 
     "Loopback": "Performs img2img processing multiple times. Output images are used as input for the next loop.",
@@ -115,36 +115,53 @@ titles = {
     "Negative Guidance minimum sigma": "Skip negative prompt for steps where image is already mostly denoised; the higher this value, the more skips there will be; provides increased performance in exchange for minor quality reduction."
 }
 
+function updateTooltipForSpan(span){
+    if (span.title) return;  // already has a title
 
-onUiUpdate(function(){
-	gradioApp().querySelectorAll('span, button, select, p').forEach(function(span){
-		if (span.title) return;  // already has a title
-
-		let tooltip = localization[titles[span.textContent]] || titles[span.textContent];
+    let tooltip = localization[titles[span.textContent]] || titles[span.textContent];
 
     if(!tooltip){
-		    tooltip = localization[titles[span.value]] || titles[span.value];
-		}
+        tooltip = localization[titles[span.value]] || titles[span.value];
+    }
 
-		if(!tooltip){
-			for (const c of span.classList) {
-				if (c in titles) {
-					tooltip = localization[titles[c]] || titles[c];
-					break;
-				}
+    if(!tooltip){
+		for (const c of span.classList) {
+			if (c in titles) {
+				tooltip = localization[titles[c]] || titles[c];
+				break;
 			}
 		}
+	}
 
-		if(tooltip){
-			span.title = tooltip;
-		}
-	})
+	if(tooltip){
+		span.title = tooltip;
+	}
+}
 
-	gradioApp().querySelectorAll('select').forEach(function(select){
-	    if (select.onchange != null) return;
+function updateTooltipForSelect(select){
+    if (select.onchange != null) return;
 
-	    select.onchange = function(){
-            select.title = localization[titles[select.value]] || titles[select.value] || "";
-	    }
-	})
+    select.onchange = function(){
+        select.title = localization[titles[select.value]] || titles[select.value] || "";
+    }
+}
+
+observedTooltipElements = {"SPAN": 1, "BUTTON": 1, "SELECT": 1, "P": 1}
+
+onUiUpdate(function(m){
+    m.forEach(function(record){
+        record.addedNodes.forEach(function(node){
+            if(observedTooltipElements[node.tagName]){
+                updateTooltipForSpan(node)
+            }
+            if(node.tagName == "SELECT"){
+                updateTooltipForSelect(node)
+            }
+
+            if(node.querySelectorAll){
+                node.querySelectorAll('span, button, select, p').forEach(updateTooltipForSpan)
+    	        node.querySelectorAll('select').forEach(updateTooltipForSelect)
+            }
+        })
+    })
 })
