@@ -15,6 +15,7 @@ import modules.devices as devices
 from modules import localization, script_loading, errors, ui_components, shared_items, cmd_args
 from modules.paths_internal import models_path, script_path, data_path, sd_configs_path, sd_default_config, sd_model_file, default_sd_model_file, extensions_dir, extensions_builtin_dir  # noqa: F401
 from ldm.models.diffusion.ddpm import LatentDiffusion
+from typing import Optional
 
 demo = None
 
@@ -113,7 +114,7 @@ class State:
     time_start = None
     server_start = None
     _server_command_signal = threading.Event()
-    _server_command: str | None = None
+    _server_command: Optional[str] = None
 
     @property
     def need_restart(self) -> bool:
@@ -131,14 +132,14 @@ class State:
         return self._server_command
 
     @server_command.setter
-    def server_command(self, value: str | None) -> None:
+    def server_command(self, value: Optional[str]) -> None:
         """
         Set the server command to `value` and signal that it's been set.
         """
         self._server_command = value
         self._server_command_signal.set()
 
-    def wait_for_server_command(self, timeout: float | None = None) -> str | None:
+    def wait_for_server_command(self, timeout: Optional[float] = None) -> Optional[str]:
         """
         Wait for server command to get set; return and clear the value and signal.
         """
@@ -417,6 +418,7 @@ options_templates.update(options_section(('sd', "Stable Diffusion"), {
 }))
 
 options_templates.update(options_section(('optimizations', "Optimizations"), {
+    "cross_attention_optimization": OptionInfo("Automatic", "Cross attention optimization", gr.Dropdown, lambda: {"choices": shared_items.cross_attention_optimizations()}),
     "s_min_uncond": OptionInfo(0, "Negative Guidance minimum sigma", gr.Slider, {"minimum": 0.0, "maximum": 4.0, "step": 0.01}).link("PR", "https://github.com/AUTOMATIC1111/stable-diffusion-webui/pull/9177").info("skip negative prompt for some steps when the image is almost ready; 0=disable, higher=faster"),
     "token_merging_ratio": OptionInfo(0.0, "Token merging ratio", gr.Slider, {"minimum": 0.0, "maximum": 0.9, "step": 0.1}).link("PR", "https://github.com/AUTOMATIC1111/stable-diffusion-webui/pull/9256").info("0=disable, higher=faster"),
     "token_merging_ratio_img2img": OptionInfo(0.0, "Token merging ratio for img2img", gr.Slider, {"minimum": 0.0, "maximum": 0.9, "step": 0.1}).info("only applies if non-zero and overrides above"),
@@ -454,12 +456,14 @@ options_templates.update(options_section(('extra_networks', "Extra Networks"), {
     "extra_networks_card_width": OptionInfo(0, "Card width for Extra Networks").info("in pixels"),
     "extra_networks_card_height": OptionInfo(0, "Card height for Extra Networks").info("in pixels"),
     "extra_networks_add_text_separator": OptionInfo(" ", "Extra networks separator").info("extra text to add before <...> when adding extra network to prompt"),
+    "ui_extra_networks_tab_reorder": OptionInfo("", "Extra networks tab order").needs_restart(),
     "sd_hypernetwork": OptionInfo("None", "Add hypernetwork to prompt", gr.Dropdown, lambda: {"choices": ["None", *hypernetworks]}, refresh=reload_hypernetworks),
 }))
 
 options_templates.update(options_section(('ui', "User interface"), {
     "localization": OptionInfo("None", "Localization", gr.Dropdown, lambda: {"choices": ["None"] + list(localization.localizations.keys())}, refresh=lambda: localization.list_localizations(cmd_opts.localizations_dir)).needs_restart(),
     "gradio_theme": OptionInfo("Default", "Gradio theme", ui_components.DropdownEditable, lambda: {"choices": ["Default"] + gradio_hf_hub_themes}).needs_restart(),
+    "img2img_editor_height": OptionInfo(720, "img2img: height of image editor", gr.Slider, {"minimum": 80, "maximum": 1600, "step": 1}).info("in pixels").needs_restart(),
     "return_grid": OptionInfo(True, "Show grid in results for web"),
     "return_mask": OptionInfo(False, "For inpainting, include the greyscale mask in results for web"),
     "return_mask_composite": OptionInfo(False, "For inpainting, include masked composite in results for web"),
@@ -469,7 +473,7 @@ options_templates.update(options_section(('ui', "User interface"), {
     "font": OptionInfo("", "Font for image grids that have text"),
     "js_modal_lightbox": OptionInfo(True, "Enable full page image viewer"),
     "js_modal_lightbox_initially_zoomed": OptionInfo(True, "Show images zoomed in by default in full page image viewer"),
-    "js_modal_lightbox_gamepad": OptionInfo(True, "Navigate image viewer with gamepad"),
+    "js_modal_lightbox_gamepad": OptionInfo(False, "Navigate image viewer with gamepad"),
     "js_modal_lightbox_gamepad_repeat": OptionInfo(250, "Gamepad repeat period, in milliseconds"),
     "show_progress_in_title": OptionInfo(True, "Show generation progress in window title."),
     "samplers_in_dropdown": OptionInfo(True, "Use dropdown for sampler selection instead of radio group").needs_restart(),
@@ -480,8 +484,9 @@ options_templates.update(options_section(('ui', "User interface"), {
     "quicksettings_list": OptionInfo(["sd_model_checkpoint"], "Quicksettings list", ui_components.DropdownMulti, lambda: {"choices": list(opts.data_labels.keys())}).js("info", "settingsHintsShowQuicksettings").info("setting entries that appear at the top of page rather than in settings tab").needs_restart(),
     "ui_tab_order": OptionInfo([], "UI tab order", ui_components.DropdownMulti, lambda: {"choices": list(tab_names)}).needs_restart(),
     "hidden_tabs": OptionInfo([], "Hidden UI tabs", ui_components.DropdownMulti, lambda: {"choices": list(tab_names)}).needs_restart(),
-    "ui_reorder": OptionInfo(", ".join(ui_reorder_categories), "txt2img/img2img UI item order"),
-    "ui_extra_networks_tab_reorder": OptionInfo("", "Extra networks tab order").needs_restart(),
+    "ui_reorder": OptionInfo(", ".join(ui_reorder_categories), "txt2img/img2img UI item order").needs_restart(),
+    "hires_fix_show_sampler": OptionInfo(False, "Hires fix: show hires sampler selection").needs_restart(),
+    "hires_fix_show_prompts": OptionInfo(False, "Hires fix: show hires prompt and negative prompt").needs_restart(),
 }))
 
 options_templates.update(options_section(('infotext', "Infotext"), {

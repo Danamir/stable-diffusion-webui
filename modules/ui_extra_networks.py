@@ -1,7 +1,6 @@
 import os.path
 import urllib.parse
 from pathlib import Path
-from PIL import PngImagePlugin
 
 from modules import shared
 from modules.images import read_info_from_image, save_image_with_geninfo
@@ -162,7 +161,7 @@ class ExtraNetworksPage:
 
         height = f"height: {shared.opts.extra_networks_card_height}px;" if shared.opts.extra_networks_card_height else ''
         width = f"width: {shared.opts.extra_networks_card_width}px;" if shared.opts.extra_networks_card_width else ''
-        background_image = f"background-image: url(\"{html.escape(preview)}\");" if preview else ''
+        background_image = f'<img src="{html.escape(preview)}" class="preview" loading="lazy">' if preview else ''
         metadata_button = ""
         metadata = item.get("metadata")
         if metadata:
@@ -187,7 +186,8 @@ class ExtraNetworksPage:
             return ""
 
         args = {
-            "style": f"'display: none; {height}{width}{background_image}'",
+            "background_image": background_image,
+            "style": f"'display: none; {height}{width}'",
             "prompt": item.get("prompt", None),
             "tabname": json.dumps(tabname),
             "local_preview": json.dumps(item["local_preview"]),
@@ -232,8 +232,17 @@ class ExtraNetworksPage:
         return None
 
 
-def intialize():
+def initialize():
     extra_pages.clear()
+
+
+def register_default_pages():
+    from modules.ui_extra_networks_textual_inversion import ExtraNetworksPageTextualInversion
+    from modules.ui_extra_networks_hypernets import ExtraNetworksPageHypernetworks
+    from modules.ui_extra_networks_checkpoints import ExtraNetworksPageCheckpoints
+    register_page(ExtraNetworksPageTextualInversion())
+    register_page(ExtraNetworksPageHypernetworks())
+    register_page(ExtraNetworksPageCheckpoints())
 
 
 class ExtraNetworksUi:

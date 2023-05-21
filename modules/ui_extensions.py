@@ -125,7 +125,9 @@ def make_commit_link(commit_hash, remote, text=None):
     if text is None:
         text = commit_hash[:8]
     if remote.startswith("https://github.com/"):
-        href = os.path.join(remote, "commit", commit_hash)
+        if remote.endswith(".git"):
+            remote = remote[:-4]
+        href = remote + "/commit/" + commit_hash
         return f'<a href="{href}" target="_blank">{text}</a>'
     else:
         return text
@@ -343,12 +345,12 @@ def install_extension_from_url(dirname, url, branch_name=None):
         shutil.rmtree(tmpdir, True)
         if not branch_name:
             # if no branch is specified, use the default branch
-            with git.Repo.clone_from(url, tmpdir) as repo:
+            with git.Repo.clone_from(url, tmpdir, filter=['blob:none']) as repo:
                 repo.remote().fetch()
                 for submodule in repo.submodules:
                     submodule.update()
         else:
-            with git.Repo.clone_from(url, tmpdir, branch=branch_name) as repo:
+            with git.Repo.clone_from(url, tmpdir, filter=['blob:none'], branch=branch_name) as repo:
                 repo.remote().fetch()
                 for submodule in repo.submodules:
                     submodule.update()
