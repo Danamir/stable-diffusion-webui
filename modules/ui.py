@@ -616,7 +616,8 @@ def create_ui():
                 outputs=[
                     txt2img_prompt,
                     txt_prompt_img
-                ]
+                ],
+                show_progress=False,
             )
 
             enable_hr.change(
@@ -903,7 +904,8 @@ def create_ui():
                 outputs=[
                     img2img_prompt,
                     img2img_prompt_img
-                ]
+                ],
+                show_progress=False,
             )
 
             img2img_args = dict(
