@@ -68,7 +68,13 @@ def git_tag():
     try:
         return subprocess.check_output([git, "describe", "--tags"], shell=False, encoding='utf8').strip()
     except Exception:
-        return "<none>"
+        try:
+            from pathlib import Path
+            changelog_md = Path(__file__).parent.parent / "CHANGELOG.md"
+            with changelog_md.open(encoding="utf-8") as file:
+                return next((line.strip() for line in file if line.strip()), "<none>")
+        except Exception:
+            return "<none>"
 
 
 def run(command, desc=None, errdesc=None, custom_env=None, live: bool = default_command_live) -> str:
@@ -237,6 +243,12 @@ def prepare_environment():
     k_diffusion_commit_hash = os.environ.get('K_DIFFUSION_COMMIT_HASH', "c9fe758757e022f05ca5a53fa8fac28889e4f1cf")
     codeformer_commit_hash = os.environ.get('CODEFORMER_COMMIT_HASH', "c5b4593074ba6214284d6acd5f1719b6c5d739af")
     blip_commit_hash = os.environ.get('BLIP_COMMIT_HASH', "48211a1594f1321b00f14c9f7a5b4813144b2fb9")
+
+    try:
+        # the existance of this file is a signal to webui.sh/bat that webui needs to be restarted when it stops execution
+        os.remove(os.path.join(script_path, "tmp", "restart"))
+    except OSError:
+        pass
 
     if not args.skip_python_version_check:
         check_python_version()

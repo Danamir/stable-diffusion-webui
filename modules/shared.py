@@ -260,6 +260,10 @@ class OptionInfo:
         self.comment_after += f"<span class='info'>({info})</span>"
         return self
 
+    def html(self, html):
+        self.comment_after += html
+        return self
+
     def needs_restart(self):
         self.comment_after += " <span class='info'>(requires restart)</span>"
         return self
@@ -425,6 +429,7 @@ options_templates.update(options_section(('compatibility', "Compatibility"), {
     "no_dpmpp_sde_batch_determinism": OptionInfo(False, "Do not make DPM++ SDE deterministic across different batch sizes."),
     "use_old_hires_fix_width_height": OptionInfo(False, "For hires fix, use width/height sliders to set final resolution rather than first pass (disables Upscale by, Resize width/height to)."),
     "dont_fix_second_order_samplers_schedule": OptionInfo(False, "Do not fix prompt schedule for second order samplers."),
+    "hires_fix_use_firstpass_conds": OptionInfo(False, "For hires fix, calculate conds of second pass using extra networks of first pass."),
 }))
 
 options_templates.update(options_section(('interrogate', "Interrogate Options"), {
@@ -488,7 +493,14 @@ options_templates.update(options_section(('infotext', "Infotext"), {
     "add_model_hash_to_info": OptionInfo(True, "Add model hash to generation information"),
     "add_model_name_to_info": OptionInfo(True, "Add model name to generation information"),
     "add_version_to_infotext": OptionInfo(True, "Add program version to generation information"),
-    "disable_weights_auto_swap": OptionInfo(True, "When reading generation parameters from text into UI (from PNG info or pasted text), do not change the selected model/checkpoint."),
+    "disable_weights_auto_swap": OptionInfo(True, "Disregard checkpoint information from pasted infotext").info("when reading generation parameters from text into UI"),
+    "infotext_styles": OptionInfo("Apply if any", "Infer styles from prompts of pasted infotext", gr.Radio, {"choices": ["Ignore", "Apply", "Discard", "Apply if any"]}).info("when reading generation parameters from text into UI)").html("""<ul style='margin-left: 1.5em'>
+<li>Ignore: keep prompt and styles dropdown as it is.</li>
+<li>Apply: remove style text from prompt, always replace styles dropdown value with found styles (even if none are found).</li>
+<li>Discard: remove style text from prompt, keep styles dropdown as it is.</li>
+<li>Apply if any: remove style text from prompt; if any styles are found in prompt, put them into styles dropdown, otherwise keep it as it is.</li>
+</ul>"""),
+
 }))
 
 options_templates.update(options_section(('ui', "Live previews"), {
@@ -841,3 +853,12 @@ def walk_files(path, allowed_extensions=None):
                 continue
 
             yield os.path.join(root, filename)
+
+
+def restart_program():
+    """creates file tmp/restart and immediately stops the process, which webui.bat/webui.sh interpret as a command to start webui again"""
+
+    with open(os.path.join(script_path, "tmp", "restart"), "w"):
+        pass
+
+    os._exit(0)
