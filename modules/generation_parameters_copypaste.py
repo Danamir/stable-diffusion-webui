@@ -55,7 +55,7 @@ def image_from_url_text(filedata):
     if filedata is None:
         return None
 
-    if type(filedata) == list and len(filedata) > 0 and type(filedata[0]) == dict and filedata[0].get("is_file", False):
+    if type(filedata) == list and filedata and type(filedata[0]) == dict and filedata[0].get("is_file", False):
         filedata = filedata[0]
 
     if type(filedata) == dict and filedata.get("is_file", False):
@@ -277,15 +277,18 @@ Steps: 20, Sampler: Euler a, CFG scale: 7, Seed: 965400086, Size: 512x512, Model
     res["Negative prompt"] = negative_prompt
 
     for k, v in re_param.findall(lastline):
-        if v[0] == '"' and v[-1] == '"':
-            v = unquote(v)
+        try:
+            if v[0] == '"' and v[-1] == '"':
+                v = unquote(v)
 
-        m = re_imagesize.match(v)
-        if m is not None:
-            res[f"{k}-1"] = m.group(1)
-            res[f"{k}-2"] = m.group(2)
-        else:
-            res[k] = v
+            m = re_imagesize.match(v)
+            if m is not None:
+                res[f"{k}-1"] = m.group(1)
+                res[f"{k}-2"] = m.group(2)
+            else:
+                res[k] = v
+        except Exception:
+            print(f"Error parsing \"{k}: {v}\"")
 
     # Missing CLIP skip means it was set to 1 (the default)
     if "Clip skip" not in res:
@@ -445,7 +448,7 @@ def connect_paste(button, paste_fields, input_comp, override_settings_component,
 
             vals_pairs = [f"{k}: {v}" for k, v in vals.items()]
 
-            return gr.Dropdown.update(value=vals_pairs, choices=vals_pairs, visible=len(vals_pairs) > 0)
+            return gr.Dropdown.update(value=vals_pairs, choices=vals_pairs, visible=bool(vals_pairs))
 
         paste_fields = paste_fields + [(override_settings_component, paste_settings)]
 
@@ -462,5 +465,3 @@ def connect_paste(button, paste_fields, input_comp, override_settings_component,
         outputs=[],
         show_progress=False,
     )
-
-

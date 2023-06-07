@@ -400,7 +400,7 @@ def create_override_settings_dropdown(tabname, row):
     dropdown = gr.Dropdown([], label="Override settings", visible=False, elem_id=f"{tabname}_override_settings", multiselect=True)
 
     dropdown.change(
-        fn=lambda x: gr.Dropdown.update(visible=len(x) > 0),
+        fn=lambda x: gr.Dropdown.update(visible=bool(x)),
         inputs=[dropdown],
         outputs=[dropdown],
     )
@@ -1503,7 +1503,7 @@ def create_ui():
             gr.Audio(interactive=False, value=os.path.join(script_path, "notification.mp3"), elem_id="audio_notification", visible=False)
 
         footer = shared.html("footer.html")
-        footer = footer.format(versions=versions_html())
+        footer = footer.format(versions=versions_html(), api_docs="/docs" if shared.cmd_opts.api else "https://github.com/AUTOMATIC1111/stable-diffusion-webui/wiki/API")
         gr.HTML(footer, elem_id="footer")
 
         settings.add_functionality(demo)
