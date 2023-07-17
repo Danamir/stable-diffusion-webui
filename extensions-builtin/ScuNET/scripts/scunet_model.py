@@ -1,6 +1,5 @@
 import os.path
 import sys
-import traceback
 
 import PIL.Image
 import numpy as np
@@ -10,10 +9,10 @@ from tqdm import tqdm
 from basicsr.utils.download_util import load_file_from_url
 
 import modules.upscaler
-from modules import devices, modelloader
+from modules import devices, modelloader, script_callbacks, errors
 from scunet_model_arch import SCUNet as net
+
 from modules.shared import opts
-from modules import images
 
 
 class UpscalerScuNET(modules.upscaler.Upscaler):
@@ -39,8 +38,7 @@ class UpscalerScuNET(modules.upscaler.Upscaler):
                 scaler_data = modules.upscaler.UpscalerData(name, file, self, 4)
                 scalers.append(scaler_data)
             except Exception:
-                print(f"Error loading ScuNET model: {file}", file=sys.stderr)
-                print(traceback.format_exc(), file=sys.stderr)
+                errors.report(f"Error loading ScuNET model: {file}", exc_info=True)
         if add_model2:
             scaler_data2 = modules.upscaler.UpscalerData(self.model_name2, self.model_url2, self)
             scalers.append(scaler_data2)
@@ -122,8 +120,7 @@ class UpscalerScuNET(modules.upscaler.Upscaler):
     def load_model(self, path: str):
         device = devices.get_device_for('scunet')
         if "http" in path:
-            filename = load_file_from_url(url=self.model_url, model_dir=self.model_path, file_name="%s.pth" % self.name,
-                                          progress=True)
+            filename = load_file_from_url(url=self.model_url, model_dir=self.model_download_path, file_name="%s.pth" % self.name, progress=True)
         else:
             filename = path
         if not os.path.exists(os.path.join(self.model_path, filename)) or filename is None:
@@ -133,8 +130,19 @@ class UpscalerScuNET(modules.upscaler.Upscaler):
         model = net(in_nc=3, config=[4, 4, 4, 4, 4, 4, 4], dim=64)
         model.load_state_dict(torch.load(filename), strict=True)
         model.eval()
-        for k, v in model.named_parameters():
+        for _, v in model.named_parameters():
             v.requires_grad = False
         model = model.to(device)
 
         return model
+
+
+def on_ui_settings():
+    import gradio as gr
+    from modules import shared
+
+    shared.opts.add_option("SCUNET_tile", shared.OptionInfo(256, "Tile size for SCUNET upscalers.", gr.Slider, {"minimum": 0, "maximum": 512, "step": 16}, section=('upscaling', "Upscaling")).info("0 = no tiling"))
+    shared.opts.add_option("SCUNET_tile_overlap", shared.OptionInfo(8, "Tile overlap for SCUNET upscalers.", gr.Slider, {"minimum": 0, "maximum": 64, "step": 1}, section=('upscaling', "Upscaling")).info("Low values = visible seam"))
+
+
+script_callbacks.on_ui_settings(on_ui_settings)

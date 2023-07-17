@@ -1,8 +1,8 @@
 import os
 import sys
-from modules.paths_internal import models_path, script_path, data_path, extensions_dir, extensions_builtin_dir
+from modules.paths_internal import models_path, script_path, data_path, extensions_dir, extensions_builtin_dir  # noqa: F401
 
-import modules.safe
+import modules.safe  # noqa: F401
 
 
 # data_path = cmd_opts_pre.data
@@ -20,7 +20,6 @@ assert sd_path is not None, f"Couldn't find Stable Diffusion in any of: {possibl
 
 path_dirs = [
     (sd_path, 'ldm', 'Stable Diffusion', []),
-    (os.path.join(sd_path, '../taming-transformers'), 'taming', 'Taming Transformers', []),
     (os.path.join(sd_path, '../CodeFormer'), 'inference_codeformer.py', 'CodeFormer', []),
     (os.path.join(sd_path, '../BLIP'), 'models/blip.py', 'BLIP', []),
     (os.path.join(sd_path, '../k-diffusion'), 'k_diffusion/sampling.py', 'k_diffusion', ["atstart"]),
