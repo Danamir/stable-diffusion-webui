@@ -1,5 +1,5 @@
 import json
-import os.path
+import os
 import threading
 import time
 from datetime import datetime
@@ -424,7 +424,17 @@ sort_ordering = [
     (False, lambda x: x.get('name', 'z')),
     (True, lambda x: x.get('name', 'z')),
     (False, lambda x: 'z'),
+    (True, lambda x: x.get('commit_time', '')),
+    (True, lambda x: x.get('created_at', '')),
+    (True, lambda x: x.get('stars', 0)),
 ]
+
+
+def get_date(info: dict, key):
+    try:
+        return datetime.strptime(info.get(key), "%Y-%m-%dT%H:%M:%SZ").strftime("%Y-%m-%d")
+    except (ValueError, TypeError):
+        return ''
 
 
 def refresh_available_extensions_from_data(hide_tags, sort_column, filter_text=""):
@@ -451,7 +461,10 @@ def refresh_available_extensions_from_data(hide_tags, sort_column, filter_text="
 
     for ext in sorted(extlist, key=sort_function, reverse=sort_reverse):
         name = ext.get("name", "noname")
+        stars = int(ext.get("stars", 0))
         added = ext.get('added', 'unknown')
+        update_time = get_date(ext, 'commit_time')
+        create_time = get_date(ext, 'created_at')
         url = ext.get("url", None)
         description = ext.get("description", "")
         extension_tags = ext.get("tags", [])
@@ -478,7 +491,8 @@ def refresh_available_extensions_from_data(hide_tags, sort_column, filter_text="
         code += f"""
             <tr>
                 <td><a href="{html.escape(url)}" target="_blank">{html.escape(name)}</a><br />{tags_text}</td>
-                <td>{html.escape(description)}<p class="info"><span class="date_added">Added: {html.escape(added)}</span></p></td>
+                <td>{html.escape(description)}<p class="info">
+                <span class="date_added">Update: {html.escape(update_time)}  Added: {html.escape(added)}  Created: {html.escape(create_time)}</span><span class="star_count">stars: <b>{stars}</b></a></p></td>
                 <td>{install_code}</td>
             </tr>
 
@@ -499,14 +513,8 @@ def refresh_available_extensions_from_data(hide_tags, sort_column, filter_text="
 
 
 def preload_extensions_git_metadata():
-    t0 = time.time()
     for extension in extensions.extensions:
         extension.read_info_from_repo()
-    print(
-        f"preload_extensions_git_metadata for "
-        f"{len(extensions.extensions)} extensions took "
-        f"{time.time() - t0:.2f}s"
-    )
 
 
 def create_ui():
@@ -556,13 +564,14 @@ def create_ui():
             with gr.TabItem("Available", id="available"):
                 with gr.Row():
                     refresh_available_extensions_button = gr.Button(value="Load from:", variant="primary")
-                    available_extensions_index = gr.Text(value="https://raw.githubusercontent.com/AUTOMATIC1111/stable-diffusion-webui-extensions/master/index.json", label="Extension index URL").style(container=False)
+                    extensions_index_url = os.environ.get('WEBUI_EXTENSIONS_INDEX', "https://raw.githubusercontent.com/AUTOMATIC1111/stable-diffusion-webui-extensions/master/index.json")
+                    available_extensions_index = gr.Text(value=extensions_index_url, label="Extension index URL").style(container=False)
                     extension_to_install = gr.Text(elem_id="extension_to_install", visible=False)
                     install_extension_button = gr.Button(elem_id="install_extension_button", visible=False)
 
                 with gr.Row():
                     hide_tags = gr.CheckboxGroup(value=["ads", "localization", "installed"], label="Hide extensions with tags", choices=["script", "ads", "localization", "installed"])
-                    sort_column = gr.Radio(value="newest first", label="Order", choices=["newest first", "oldest first", "a-z", "z-a", "internal order", ], type="index")
+                    sort_column = gr.Radio(value="newest first", label="Order", choices=["newest first", "oldest first", "a-z", "z-a", "internal order",'update time', 'create time', "stars"], type="index")
 
                 with gr.Row():
                     search_extensions_text = gr.Text(label="Search").style(container=False)

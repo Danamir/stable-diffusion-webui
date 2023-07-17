@@ -3,6 +3,7 @@ import glob
 import html
 import os
 import inspect
+from contextlib import closing
 
 import modules.textual_inversion.dataset
 import torch
@@ -377,7 +378,7 @@ def apply_hypernetworks(hypernetworks, context, layer=None):
     return context_k, context_v
 
 
-def attention_CrossAttention_forward(self, x, context=None, mask=None):
+def attention_CrossAttention_forward(self, x, context=None, mask=None, **kwargs):
     h = self.heads
 
     q = self.to_q(x)
@@ -711,8 +712,9 @@ def train_hypernetwork(id_task, hypernetwork_name, learn_rate, batch_size, gradi
 
                     preview_text = p.prompt
 
-                    processed = processing.process_images(p)
-                    image = processed.images[0] if len(processed.images) > 0 else None
+                    with closing(p):
+                        processed = processing.process_images(p)
+                        image = processed.images[0] if len(processed.images) > 0 else None
 
                     if unload:
                         shared.sd_model.cond_stage_model.to(devices.cpu)
