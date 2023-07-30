@@ -2,7 +2,7 @@ from collections import deque
 import torch
 import inspect
 import k_diffusion.sampling
-from modules import prompt_parser, devices, sd_samplers_common
+from modules import prompt_parser, devices, sd_samplers_common, sd_samplers_extra
 
 from modules.shared import opts, state
 import modules.shared as shared
@@ -30,12 +30,14 @@ samplers_k_diffusion = [
     ('DPM++ 2M Karras', 'sample_dpmpp_2m', ['k_dpmpp_2m_ka'], {'scheduler': 'karras'}),
     ('DPM++ SDE Karras', 'sample_dpmpp_sde', ['k_dpmpp_sde_ka'], {'scheduler': 'karras', "second_order": True, "brownian_noise": True}),
     ('DPM++ 2M SDE Karras', 'sample_dpmpp_2m_sde', ['k_dpmpp_2m_sde_ka'], {'scheduler': 'karras', "brownian_noise": True}),
+    ('Restart', sd_samplers_extra.restart_sampler, ['restart'], {'scheduler': 'karras'}),
 ]
+
 
 samplers_data_k_diffusion = [
     sd_samplers_common.SamplerData(label, lambda model, funcname=funcname: KDiffusionSampler(funcname, model), aliases, options)
     for label, funcname, aliases, options in samplers_k_diffusion
-    if hasattr(k_diffusion.sampling, funcname)
+    if callable(funcname) or hasattr(k_diffusion.sampling, funcname)
 ]
 
 # DPM++ 2M Alt
@@ -307,7 +309,7 @@ class KDiffusionSampler:
 
         self.model_wrap = denoiser(sd_model, quantize=shared.opts.enable_quantization)
         self.funcname = funcname
-        self.func = getattr(k_diffusion.sampling, self.funcname)
+        self.func = funcname if callable(funcname) else getattr(k_diffusion.sampling, self.funcname)
         self.extra_params = sampler_extra_params.get(funcname, [])
         self.model_wrap_cfg = CFGDenoiser(self.model_wrap)
         self.sampler_noises = None
