@@ -1,7 +1,9 @@
 # this scripts installs necessary requirements and launches main program in webui.py
+import logging
 import re
 import subprocess
 import os
+import shutil
 import sys
 import importlib.util
 import platform
@@ -11,8 +13,10 @@ from functools import lru_cache
 from modules import cmd_args, errors
 from modules.paths_internal import script_path, extensions_dir
 from modules.timer import startup_timer
+from modules import logging_config
 
 args, _ = cmd_args.parser.parse_known_args()
+logging_config.setup_logging(args.loglevel)
 
 python = sys.executable
 git = os.environ.get('GIT', "git")
@@ -149,10 +153,8 @@ def run_git(dir, name, command, desc=None, errdesc=None, custom_env=None, live: 
     try:
         return run(f'"{git}" -C "{dir}" {command}', desc=desc, errdesc=errdesc, custom_env=custom_env, live=live)
     except RuntimeError:
-        pass
-
-    if not autofix:
-        return None
+        if not autofix:
+            raise
 
     print(f"{errdesc}, attempting autofix...")
     git_fix_workspace(dir, name)
@@ -171,13 +173,17 @@ def git_clone(url, dir, name, commithash=None):
         if current_hash == commithash:
             return
 
-        run_git('fetch', f"Fetching updates for {name}...", f"Couldn't fetch {name}")
+        run_git('fetch', f"Fetching updates for {name}...", f"Couldn't fetch {name}", autofix=False)
 
         run_git('checkout', f"Checking out commit for {name} with hash: {commithash}...", f"Couldn't checkout commit {commithash} for {name}", live=True)
 
         return
 
-    run(f'"{git}" clone "{url}" "{dir}"', f"Cloning {name} into {dir}...", f"Couldn't clone {name}", live=True)
+    try:
+        run(f'"{git}" clone "{url}" "{dir}"', f"Cloning {name} into {dir}...", f"Couldn't clone {name}", live=True)
+    except RuntimeError:
+        shutil.rmtree(dir, ignore_errors=True)
+        raise
 
     if commithash is not None:
         run(f'"{git}" -C "{dir}" checkout {commithash}', None, "Couldn't checkout {name}'s hash: {commithash}")
@@ -249,6 +255,8 @@ def run_extensions_installers(settings_file):
 
     with startup_timer.subcategory("run extensions installers"):
         for dirname_extension in list_extensions(settings_file):
+            logging.debug(f"Installing {dirname_extension}")
+
             path = os.path.join(extensions_dir, dirname_extension)
 
             if os.path.isdir(path):
@@ -300,7 +308,6 @@ def prepare_environment():
     requirements_file = os.environ.get('REQS_FILE', "requirements_versions.txt")
 
     xformers_package = os.environ.get('XFORMERS_PACKAGE', 'xformers==0.0.20')
-    gfpgan_package = os.environ.get('GFPGAN_PACKAGE', "https://github.com/TencentARC/GFPGAN/archive/8d2447a2d918f8eba5a4a01463fd48e45126a379.zip")
     clip_package = os.environ.get('CLIP_PACKAGE', "https://github.com/openai/CLIP/archive/d50d76daa670286dd6cacf3bcd80b5e4823fc8e1.zip")
     openclip_package = os.environ.get('OPENCLIP_PACKAGE', "https://github.com/mlfoundations/open_clip/archive/bb6e834e9c70d9c27d0dc3ecedeebeaeb1ffad6b.zip")
 
@@ -346,11 +353,6 @@ def prepare_environment():
             'add --skip-torch-cuda-test to COMMANDLINE_ARGS variable to disable this check'
         )
     startup_timer.record("torch GPU test")
-
-
-    if not is_installed("gfpgan"):
-        run_pip(f"install {gfpgan_package}", "gfpgan")
-        startup_timer.record("install gfpgan")
 
     if not is_installed("clip"):
         run_pip(f"install {clip_package}", "clip")
