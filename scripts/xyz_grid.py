@@ -86,6 +86,15 @@ def confirm_checkpoints(p, xs):
             raise RuntimeError(f"Unknown checkpoint: {x}")
 
 
+def confirm_checkpoints_or_none(p, xs):
+    for x in xs:
+        if x in (None, "", "None", "none"):
+            continue
+
+        if modules.sd_models.get_closet_checkpoint_match(x) is None:
+            raise RuntimeError(f"Unknown checkpoint: {x}")
+
+
 def apply_clip_skip(p, x, xs):
     opts.data["CLIP_stop_at_last_layers"] = x
 
@@ -241,6 +250,8 @@ axis_options = [
     AxisOption("Eta", float, apply_field("eta")),
     AxisOption("Clip skip", int, apply_clip_skip),
     AxisOption("Denoising", float, apply_field("denoising_strength")),
+    AxisOption("Initial noise multiplier", float, apply_field("initial_noise_multiplier")),
+    AxisOption("Extra noise", float, apply_override("img2img_extra_noise")),
     AxisOptionTxt2Img("Hires upscaler", str, apply_field("hr_upscaler"), choices=lambda: [*shared.latent_upscale_modes, *[x.name for x in shared.sd_upscalers]]),
     AxisOptionImg2Img("Cond. Image Mask Weight", float, apply_field("inpainting_mask_weight")),
     AxisOption("VAE", str, apply_vae, cost=0.7, choices=lambda: ['None'] + list(sd_vae.vae_dict)),
@@ -250,6 +261,8 @@ axis_options = [
     AxisOption("Token merging ratio", float, apply_override('token_merging_ratio')),
     AxisOption("Token merging ratio high-res", float, apply_override('token_merging_ratio_hr')),
     AxisOption("Always discard next-to-last sigma", str, apply_override('always_discard_next_to_last_sigma', boolean=True), choices=boolean_choice(reverse=True)),
+    AxisOption("Refiner checkpoint", str, apply_field('refiner_checkpoint'), format_value=format_remove_path, confirm=confirm_checkpoints_or_none, cost=1.0, choices=lambda: ['None'] + sorted(sd_models.checkpoints_list, key=str.casefold)),
+    AxisOption("Refiner switch at", float, apply_field('refiner_switch_at')),
 ]
 
 

@@ -2,6 +2,7 @@ import logging
 import os
 import re
 
+import lora_patches
 import network
 import network_lora
 import network_hada
@@ -277,7 +278,15 @@ def network_restore_weights_from_backup(self: Union[torch.nn.Conv2d, torch.nn.Li
             self.weight.copy_(weights_backup)
 
     if bias_backup is not None:
-        self.bias.copy_(bias_backup)
+        if isinstance(self, torch.nn.MultiheadAttention):
+            self.out_proj.bias.copy_(bias_backup)
+        else:
+            self.bias.copy_(bias_backup)
+    else:
+        if isinstance(self, torch.nn.MultiheadAttention):
+            self.out_proj.bias = None
+        else:
+            self.bias = None
 
 
 def network_apply_weights(self: Union[torch.nn.Conv2d, torch.nn.Linear, torch.nn.GroupNorm, torch.nn.LayerNorm, torch.nn.MultiheadAttention]):
@@ -295,7 +304,10 @@ def network_apply_weights(self: Union[torch.nn.Conv2d, torch.nn.Linear, torch.nn
     wanted_names = tuple((x.name, x.te_multiplier, x.unet_multiplier, x.dyn_dim) for x in loaded_networks)
 
     weights_backup = getattr(self, "network_weights_backup", None)
-    if weights_backup is None:
+    if weights_backup is None and wanted_names != ():
+        if current_names != ():
+            raise RuntimeError("no backup weights found and current weights are not unchanged")
+
         if isinstance(self, torch.nn.MultiheadAttention):
             weights_backup = (self.in_proj_weight.to(devices.cpu, copy=True), self.out_proj.weight.to(devices.cpu, copy=True))
         else:
@@ -304,8 +316,13 @@ def network_apply_weights(self: Union[torch.nn.Conv2d, torch.nn.Linear, torch.nn
         self.network_weights_backup = weights_backup
 
     bias_backup = getattr(self, "network_bias_backup", None)
-    if bias_backup is None and getattr(self, 'bias', None) is not None:
-        bias_backup = self.bias.to(devices.cpu, copy=True)
+    if bias_backup is None:
+        if isinstance(self, torch.nn.MultiheadAttention) and self.out_proj.bias is not None:
+            bias_backup = self.out_proj.bias.to(devices.cpu, copy=True)
+        elif getattr(self, 'bias', None) is not None:
+            bias_backup = self.bias.to(devices.cpu, copy=True)
+        else:
+            bias_backup = None
         self.network_bias_backup = bias_backup
 
     if current_names != wanted_names:
@@ -323,8 +340,11 @@ def network_apply_weights(self: Union[torch.nn.Conv2d, torch.nn.Linear, torch.nn
                             updown = torch.nn.functional.pad(updown, (0, 0, 0, 0, 0, 5))
 
                         self.weight += updown
-                        if ex_bias is not None and getattr(self, 'bias', None) is not None:
-                            self.bias += ex_bias
+                        if ex_bias is not None and hasattr(self, 'bias'):
+                            if self.bias is None:
+                                self.bias = torch.nn.Parameter(ex_bias)
+                            else:
+                                self.bias += ex_bias
                 except RuntimeError as e:
                     logging.debug(f"Network {net.name} layer {network_layer_name}: {e}")
                     extra_network_lora.errors[net.name] = extra_network_lora.errors.get(net.name, 0) + 1
@@ -339,14 +359,19 @@ def network_apply_weights(self: Union[torch.nn.Conv2d, torch.nn.Linear, torch.nn
             if isinstance(self, torch.nn.MultiheadAttention) and module_q and module_k and module_v and module_out:
                 try:
                     with torch.no_grad():
-                        updown_q = module_q.calc_updown(self.in_proj_weight)
-                        updown_k = module_k.calc_updown(self.in_proj_weight)
-                        updown_v = module_v.calc_updown(self.in_proj_weight)
+                        updown_q, _ = module_q.calc_updown(self.in_proj_weight)
+                        updown_k, _ = module_k.calc_updown(self.in_proj_weight)
+                        updown_v, _ = module_v.calc_updown(self.in_proj_weight)
                         updown_qkv = torch.vstack([updown_q, updown_k, updown_v])
-                        updown_out = module_out.calc_updown(self.out_proj.weight)
+                        updown_out, ex_bias = module_out.calc_updown(self.out_proj.weight)
 
                         self.in_proj_weight += updown_qkv
                         self.out_proj.weight += updown_out
+                    if ex_bias is not None:
+                        if self.out_proj.bias is None:
+                            self.out_proj.bias = torch.nn.Parameter(ex_bias)
+                        else:
+                            self.out_proj.bias += ex_bias
 
                 except RuntimeError as e:
                     logging.debug(f"Network {net.name} layer {network_layer_name}: {e}")
@@ -397,74 +422,74 @@ def network_reset_cached_weight(self: Union[torch.nn.Conv2d, torch.nn.Linear]):
 
 def network_Linear_forward(self, input):
     if shared.opts.lora_functional:
-        return network_forward(self, input, torch.nn.Linear_forward_before_network)
+        return network_forward(self, input, originals.Linear_forward)
 
     network_apply_weights(self)
 
-    return torch.nn.Linear_forward_before_network(self, input)
+    return originals.Linear_forward(self, input)
 
 
 def network_Linear_load_state_dict(self, *args, **kwargs):
     network_reset_cached_weight(self)
 
-    return torch.nn.Linear_load_state_dict_before_network(self, *args, **kwargs)
+    return originals.Linear_load_state_dict(self, *args, **kwargs)
 
 
 def network_Conv2d_forward(self, input):
     if shared.opts.lora_functional:
-        return network_forward(self, input, torch.nn.Conv2d_forward_before_network)
+        return network_forward(self, input, originals.Conv2d_forward)
 
     network_apply_weights(self)
 
-    return torch.nn.Conv2d_forward_before_network(self, input)
+    return originals.Conv2d_forward(self, input)
 
 
 def network_Conv2d_load_state_dict(self, *args, **kwargs):
     network_reset_cached_weight(self)
 
-    return torch.nn.Conv2d_load_state_dict_before_network(self, *args, **kwargs)
+    return originals.Conv2d_load_state_dict(self, *args, **kwargs)
 
 
 def network_GroupNorm_forward(self, input):
     if shared.opts.lora_functional:
-        return network_forward(self, input, torch.nn.GroupNorm_forward_before_network)
+        return network_forward(self, input, originals.GroupNorm_forward)
 
     network_apply_weights(self)
 
-    return torch.nn.GroupNorm_forward_before_network(self, input)
+    return originals.GroupNorm_forward(self, input)
 
 
 def network_GroupNorm_load_state_dict(self, *args, **kwargs):
     network_reset_cached_weight(self)
 
-    return torch.nn.GroupNorm_load_state_dict_before_network(self, *args, **kwargs)
+    return originals.GroupNorm_load_state_dict(self, *args, **kwargs)
 
 
 def network_LayerNorm_forward(self, input):
     if shared.opts.lora_functional:
-        return network_forward(self, input, torch.nn.LayerNorm_forward_before_network)
+        return network_forward(self, input, originals.LayerNorm_forward)
 
     network_apply_weights(self)
 
-    return torch.nn.LayerNorm_forward_before_network(self, input)
+    return originals.LayerNorm_forward(self, input)
 
 
 def network_LayerNorm_load_state_dict(self, *args, **kwargs):
     network_reset_cached_weight(self)
 
-    return torch.nn.LayerNorm_load_state_dict_before_network(self, *args, **kwargs)
+    return originals.LayerNorm_load_state_dict(self, *args, **kwargs)
 
 
 def network_MultiheadAttention_forward(self, *args, **kwargs):
     network_apply_weights(self)
 
-    return torch.nn.MultiheadAttention_forward_before_network(self, *args, **kwargs)
+    return originals.MultiheadAttention_forward(self, *args, **kwargs)
 
 
 def network_MultiheadAttention_load_state_dict(self, *args, **kwargs):
     network_reset_cached_weight(self)
 
-    return torch.nn.MultiheadAttention_load_state_dict_before_network(self, *args, **kwargs)
+    return originals.MultiheadAttention_load_state_dict(self, *args, **kwargs)
 
 
 def list_available_networks():
@@ -530,6 +555,9 @@ def infotext_pasted(infotext, params):
 
     if added:
         params["Prompt"] += "\n" + "".join(added)
+
+
+originals: lora_patches.LoraPatches = None
 
 extra_network_lora = None
 

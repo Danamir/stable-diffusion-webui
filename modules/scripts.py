@@ -68,6 +68,9 @@ class Script:
     on_after_component_elem_id = None
     """list of callbacks to be called after a component with an elem_id is created"""
 
+    setup_for_ui_only = False
+    """If true, the script setup will only be run in Gradio UI, not in API"""
+
     def title(self):
         """this function should return the title of the script. This is what will be displayed in the dropdown menu."""
 
@@ -239,6 +242,8 @@ class Script:
         """
         Calls callback before a component is created. The callback function is called with a single argument of type OnComponent.
 
+        May be called in show() or ui() - but it may be too late in latter as some components may already be created.
+
         This function is an alternative to before_component in that it also cllows to run before a component is created, but
         it doesn't require to be called for every created component - just for the one you need.
         """
@@ -256,7 +261,6 @@ class Script:
 
         self.on_after_component_elem_id.append((elem_id, callback))
 
-
     def describe(self):
         """unused"""
         return ""
@@ -265,7 +269,7 @@ class Script:
         """helper function to generate id for a HTML element, constructs final id out of script name, tab and user-supplied item_id"""
 
         need_tabname = self.show(True) == self.show(False)
-        tabkind = 'img2img' if self.is_img2img else 'txt2txt'
+        tabkind = 'img2img' if self.is_img2img else 'txt2img'
         tabname = f"{tabkind}_" if need_tabname else ""
         title = re.sub(r'[^a-z_0-9]', '', re.sub(r'\s', '_', self.title().lower()))
 
@@ -278,13 +282,14 @@ class Script:
         pass
 
 
-class ScriptBuiltin(Script):
+class ScriptBuiltinUI(Script):
+    setup_for_ui_only = True
 
     def elem_id(self, item_id):
         """helper function to generate id for a HTML element, constructs final id out of tab and user-supplied item_id"""
 
         need_tabname = self.show(True) == self.show(False)
-        tabname = ('img2img' if self.is_img2img else 'txt2txt') + "_" if need_tabname else ""
+        tabname = ('img2img' if self.is_img2img else 'txt2img') + "_" if need_tabname else ""
 
         return f'{tabname}{item_id}'
 
@@ -445,6 +450,28 @@ class ScriptRunner:
                 self.scripts.append(script)
                 self.selectable_scripts.append(script)
 
+        self.apply_on_before_component_callbacks()
+
+    def apply_on_before_component_callbacks(self):
+        for script in self.scripts:
+            on_before = script.on_before_component_elem_id or []
+            on_after = script.on_after_component_elem_id or []
+
+            for elem_id, callback in on_before:
+                if elem_id not in self.on_before_component_elem_id:
+                    self.on_before_component_elem_id[elem_id] = []
+
+                self.on_before_component_elem_id[elem_id].append((callback, script))
+
+            for elem_id, callback in on_after:
+                if elem_id not in self.on_after_component_elem_id:
+                    self.on_after_component_elem_id[elem_id] = []
+
+                self.on_after_component_elem_id[elem_id].append((callback, script))
+
+            on_before.clear()
+            on_after.clear()
+
     def create_script_ui(self, script):
         import modules.api.models as api_models
 
@@ -555,16 +582,7 @@ class ScriptRunner:
         self.infotext_fields.append((dropdown, lambda x: gr.update(value=x.get('Script', 'None'))))
         self.infotext_fields.extend([(script.group, onload_script_visibility) for script in self.selectable_scripts])
 
-        for script in self.scripts:
-            for elem_id, callback in script.on_before_component_elem_id or []:
-                items = self.on_before_component_elem_id.get(elem_id, [])
-                items.append((callback, script))
-                self.on_before_component_elem_id[elem_id] = items
-
-            for elem_id, callback in script.on_after_component_elem_id or []:
-                items = self.on_after_component_elem_id.get(elem_id, [])
-                items.append((callback, script))
-                self.on_after_component_elem_id[elem_id] = items
+        self.apply_on_before_component_callbacks()
 
         return self.inputs
 
@@ -713,8 +731,11 @@ class ScriptRunner:
             except Exception:
                 errors.report(f"Error running before_hr: {script.filename}", exc_info=True)
 
-    def setup_scrips(self, p):
+    def setup_scrips(self, p, *, is_ui=True):
         for script in self.alwayson_scripts:
+            if not is_ui and script.setup_for_ui_only:
+                continue
+
             try:
                 script_args = p.script_args[script.args_from:script.args_to]
                 script.setup(p, *script_args)

@@ -81,6 +81,12 @@ def apply_overlay(image, paste_loc, index, overlays):
 
     return image
 
+def create_binary_mask(image):
+    if image.mode == 'RGBA' and image.getextrema()[-1] != (255, 255):
+        image = image.split()[-1].convert("L").point(lambda x: 255 if x > 128 else 0)
+    else:
+        image = image.convert('L')
+    return image
 
 def txt2img_image_conditioning(sd_model, x, width, height):
     if sd_model.model.conditioning_key in {'hybrid', 'concat'}: # Inpainting models
@@ -114,7 +120,7 @@ class StableDiffusionProcessing:
     prompt: str = ""
     prompt_for_display: str = None
     negative_prompt: str = ""
-    styles: list[str] = field(default_factory=list)
+    styles: list[str] = None
     seed: int = -1
     subseed: int = -1
     subseed_strength: float = 0
@@ -194,11 +200,16 @@ class StableDiffusionProcessing:
     sd_vae_name: str = field(default=None, init=False)
     sd_vae_hash: str = field(default=None, init=False)
 
+    is_api: bool = field(default=False, init=False)
+
     def __post_init__(self):
         if self.sampler_index is not None:
             print("sampler_index argument for StableDiffusionProcessing does not do anything; use sampler_name", file=sys.stderr)
 
         self.comments = {}
+
+        if self.styles is None:
+            self.styles = []
 
         self.sampler_noise_scheduler_override = None
         self.s_min_uncond = self.s_min_uncond if self.s_min_uncond is not None else opts.s_min_uncond
@@ -255,7 +266,7 @@ class StableDiffusionProcessing:
     def setup_scripts(self):
         self.scripts_setup_complete = True
 
-        self.scripts.setup_scrips(self)
+        self.scripts.setup_scrips(self, is_ui=not self.is_api)
 
     def comment(self, text):
         self.comments[text] = 1
@@ -375,15 +386,20 @@ class StableDiffusionProcessing:
         return self.token_merging_ratio or opts.token_merging_ratio
 
     def setup_prompts(self):
-        if type(self.prompt) == list:
+        if isinstance(self.prompt,list):
             self.all_prompts = self.prompt
+        elif isinstance(self.negative_prompt, list):
+            self.all_prompts = [self.prompt] * len(self.negative_prompt)
         else:
             self.all_prompts = self.batch_size * self.n_iter * [self.prompt]
 
-        if type(self.negative_prompt) == list:
+        if isinstance(self.negative_prompt, list):
             self.all_negative_prompts = self.negative_prompt
         else:
-            self.all_negative_prompts = self.batch_size * self.n_iter * [self.negative_prompt]
+            self.all_negative_prompts = [self.negative_prompt] * len(self.all_prompts)
+
+        if len(self.all_prompts) != len(self.all_negative_prompts):
+            raise RuntimeError(f"Received a different number of prompts ({len(self.all_prompts)}) and negative prompts ({len(self.all_negative_prompts)})")
 
         self.all_prompts = [shared.prompt_styles.apply_styles_to_prompt(x, self.styles) for x in self.all_prompts]
         self.all_negative_prompts = [shared.prompt_styles.apply_negative_styles_to_prompt(x, self.styles) for x in self.all_negative_prompts]
@@ -496,10 +512,10 @@ class Processed:
         self.s_noise = p.s_noise
         self.s_min_uncond = p.s_min_uncond
         self.sampler_noise_scheduler_override = p.sampler_noise_scheduler_override
-        self.prompt = self.prompt if type(self.prompt) != list else self.prompt[0]
-        self.negative_prompt = self.negative_prompt if type(self.negative_prompt) != list else self.negative_prompt[0]
-        self.seed = int(self.seed if type(self.seed) != list else self.seed[0]) if self.seed is not None else -1
-        self.subseed = int(self.subseed if type(self.subseed) != list else self.subseed[0]) if self.subseed is not None else -1
+        self.prompt = self.prompt if not isinstance(self.prompt, list) else self.prompt[0]
+        self.negative_prompt = self.negative_prompt if not isinstance(self.negative_prompt, list) else self.negative_prompt[0]
+        self.seed = int(self.seed if not isinstance(self.seed, list) else self.seed[0]) if self.seed is not None else -1
+        self.subseed = int(self.subseed if not isinstance(self.subseed, list) else self.subseed[0]) if self.subseed is not None else -1
         self.is_using_inpainting_conditioning = p.is_using_inpainting_conditioning
 
         self.all_prompts = all_prompts or p.all_prompts or [self.prompt]
@@ -686,11 +702,8 @@ def process_images(p: StableDiffusionProcessing) -> Processed:
     stored_opts = {k: opts.data[k] for k in p.override_settings.keys()}
 
     try:
-        # after running refiner, the refiner model is not unloaded - webui swaps back to main model here
-        if shared.sd_model.sd_checkpoint_info.title != opts.sd_model_checkpoint:
-            sd_models.reload_model_weights()
-
         # if no checkpoint override or the override checkpoint can't be found, remove override entry and load opts checkpoint
+        # and if after running refiner, the refiner model is not unloaded - webui swaps back to main model here, if model over is present it will be reloaded afterwards
         if sd_models.checkpoint_aliases.get(p.override_settings.get('sd_model_checkpoint')) is None:
             p.override_settings.pop('sd_model_checkpoint', None)
             sd_models.reload_model_weights()
@@ -725,7 +738,7 @@ def process_images(p: StableDiffusionProcessing) -> Processed:
 def process_images_inner(p: StableDiffusionProcessing) -> Processed:
     """this is the main loop that both txt2img and img2img use; it calls func_init once inside all the scopes and func_sample once per batch"""
 
-    if type(p.prompt) == list:
+    if isinstance(p.prompt, list):
         assert(len(p.prompt) > 0)
     else:
         assert p.prompt is not None
@@ -741,7 +754,7 @@ def process_images_inner(p: StableDiffusionProcessing) -> Processed:
     if p.tiling is None:
         p.tiling = opts.tiling
 
-    if p.refiner_checkpoint not in (None, "", "None"):
+    if p.refiner_checkpoint not in (None, "", "None", "none"):
         p.refiner_checkpoint_info = sd_models.get_closet_checkpoint_match(p.refiner_checkpoint)
         if p.refiner_checkpoint_info is None:
             raise Exception(f'Could not find checkpoint with name {p.refiner_checkpoint}')
@@ -756,12 +769,12 @@ def process_images_inner(p: StableDiffusionProcessing) -> Processed:
 
     p.setup_prompts()
 
-    if type(seed) == list:
+    if isinstance(seed, list):
         p.all_seeds = seed
     else:
         p.all_seeds = [int(seed) + (x if p.subseed_strength == 0 else 0) for x in range(len(p.all_prompts))]
 
-    if type(subseed) == list:
+    if isinstance(subseed, list):
         p.all_subseeds = subseed
     else:
         p.all_subseeds = [int(subseed) + x for x in range(len(p.all_prompts))]
@@ -1139,6 +1152,9 @@ class StableDiffusionProcessingTxt2Img(StableDiffusionProcessing):
             devices.torch_gc()
 
     def sample_hr_pass(self, samples, decoded_samples, seeds, subseeds, subseed_strength, prompts):
+        if shared.state.interrupted:
+            return samples
+
         self.is_hr_pass = True
 
         target_width = self.hr_upscale_to_x
@@ -1252,12 +1268,12 @@ class StableDiffusionProcessingTxt2Img(StableDiffusionProcessing):
         if self.hr_negative_prompt == '':
             self.hr_negative_prompt = self.negative_prompt
 
-        if type(self.hr_prompt) == list:
+        if isinstance(self.hr_prompt, list):
             self.all_hr_prompts = self.hr_prompt
         else:
             self.all_hr_prompts = self.batch_size * self.n_iter * [self.hr_prompt]
 
-        if type(self.hr_negative_prompt) == list:
+        if isinstance(self.hr_negative_prompt, list):
             self.all_hr_negative_prompts = self.hr_negative_prompt
         else:
             self.all_hr_negative_prompts = self.batch_size * self.n_iter * [self.hr_negative_prompt]
@@ -1376,7 +1392,9 @@ class StableDiffusionProcessingImg2Img(StableDiffusionProcessing):
         image_mask = self.image_mask
 
         if image_mask is not None:
-            image_mask = image_mask.convert('L')
+            # image_mask is passed in as RGBA by Gradio to support alpha masks,
+            # but we still want to support binary masks.
+            image_mask = create_binary_mask(image_mask)
 
             if self.inpainting_mask_invert:
                 image_mask = ImageOps.invert(image_mask)
@@ -1498,7 +1516,7 @@ class StableDiffusionProcessingImg2Img(StableDiffusionProcessing):
             elif self.inpainting_fill == 3:
                 self.init_latent = self.init_latent * self.mask
 
-        self.image_conditioning = self.img2img_image_conditioning(image, self.init_latent, image_mask)
+        self.image_conditioning = self.img2img_image_conditioning(image * 2 - 1, self.init_latent, image_mask)
 
     def sample(self, conditioning, unconditional_conditioning, seeds, subseeds, subseed_strength, prompts):
         x = self.rng.next()

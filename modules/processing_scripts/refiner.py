@@ -5,7 +5,7 @@ from modules.ui_common import create_refresh_button
 from modules.ui_components import InputAccordion
 
 
-class ScriptRefiner(scripts.Script):
+class ScriptRefiner(scripts.ScriptBuiltinUI):
     section = "accordions"
     create_group = False
 
@@ -42,7 +42,7 @@ class ScriptRefiner(scripts.Script):
         # the actual implementation is in sd_samplers_common.py, apply_refiner
 
         if not enable_refiner or refiner_checkpoint in (None, "", "None"):
-            p.refiner_checkpoint_info = None
+            p.refiner_checkpoint = None
             p.refiner_switch_at = None
         else:
             p.refiner_checkpoint = refiner_checkpoint

@@ -70,7 +70,6 @@ def get_filename(filepath):
 
 
 def refresh_vae_list():
-    global vae_dict
     vae_dict.clear()
 
     paths = [
@@ -104,7 +103,7 @@ def refresh_vae_list():
         name = get_filename(filepath)
         vae_dict[name] = filepath
 
-    vae_dict = dict(sorted(vae_dict.items(), key=lambda item: shared.natural_sort_key(item[0])))
+    vae_dict.update(dict(sorted(vae_dict.items(), key=lambda item: shared.natural_sort_key(item[0]))))
 
 
 def find_vae_near_checkpoint(checkpoint_file):
@@ -160,7 +159,7 @@ def resolve_vae_from_user_metadata(checkpoint_file) -> VaeResolution:
 
 def resolve_vae_near_checkpoint(checkpoint_file) -> VaeResolution:
     vae_near_checkpoint = find_vae_near_checkpoint(checkpoint_file)
-    if vae_near_checkpoint is not None and (shared.opts.sd_vae_as_default or is_automatic):
+    if vae_near_checkpoint is not None and (not shared.opts.sd_vae_overrides_per_model_preferences or is_automatic):
         return VaeResolution(vae_near_checkpoint, 'found near the checkpoint')
 
     return VaeResolution(resolved=False)
