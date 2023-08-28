@@ -67,7 +67,7 @@
  * make it possible to localize tooltips and placeholders
 
 ### Extensions and API:
- * gradio 3.41.0
+ * gradio 3.41.2
  * also bump versions for packages: transformers, GitPython, accelerate, scikit-image, timm, tomesd
  * support tooltip kwarg for gradio elements: gr.Textbox(label='hello', tooltip='world')
  * properly clear the total console progressbar when using txt2img and img2img from API
@@ -127,6 +127,14 @@
  * set devices.dtype_unet correctly
  * run RealESRGAN on GPU for non-CUDA devices ([#12737](https://github.com/AUTOMATIC1111/stable-diffusion-webui/pull/12737))
  * prevent extra network buttons being obscured by description for very small card sizes ([#12745](https://github.com/AUTOMATIC1111/stable-diffusion-webui/pull/12745))
+ * fix error that causes some extra networks to be disabled if both <lora:> and <lyco:> are present in the prompt
+ * fix defaults settings page breaking when any of main UI tabs are hidden
+ * fix incorrect save/display of new values in Defaults page in settings
+ * fix for Reload UI function: if you reload UI on one tab, other opened tabs will no longer stop working
+ * fix an error that prevents VAE being reloaded after an option change if a VAE near the checkpoint exists ([#12797](https://github.com/AUTOMATIC1111/stable-diffusion-webui/pull/12737))
+ * hide broken image crop tool ([#12792](https://github.com/AUTOMATIC1111/stable-diffusion-webui/pull/12737))
+ * don't show hidden samplers in dropdown for XYZ script ([#12780](https://github.com/AUTOMATIC1111/stable-diffusion-webui/pull/12737))
+ * fix style editing dialog breaking if it's opened in both img2img and txt2img tabs
 
 
 ## 1.5.2
