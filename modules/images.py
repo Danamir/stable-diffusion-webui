@@ -561,6 +561,8 @@ def save_image_with_geninfo(image, geninfo, filename, extension=None, existing_p
             })
 
             piexif.insert(exif_bytes, filename)
+    elif extension.lower() == ".gif":
+        image.save(filename, format=image_format, comment=geninfo)
     else:
         image.save(filename, format=image_format, quality=opts.jpeg_quality)
 
@@ -739,6 +741,8 @@ def read_info_from_image(image: Image.Image) -> tuple[str | None, dict]:
         if exif_comment:
             items['exif comment'] = exif_comment
             geninfo = exif_comment
+    elif "comment" in items: # for gif
+        geninfo = items["comment"].decode('utf8', errors="ignore")
 
     for field in IGNORED_INFO_KEYS:
         items.pop(field, None)

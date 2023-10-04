@@ -4,12 +4,6 @@
 # change the variables in webui-user.sh instead #
 #################################################
 
-
-use_venv=1
-if [[ $venv_dir == "-" ]]; then
-  use_venv=0
-fi
-
 SCRIPT_DIR=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 
 
@@ -26,6 +20,12 @@ fi
 if [[ -f "$SCRIPT_DIR"/webui-user.sh ]]
 then
     source "$SCRIPT_DIR"/webui-user.sh
+fi
+
+# If $venv_dir is "-", then disable venv support
+use_venv=1
+if [[ $venv_dir == "-" ]]; then
+  use_venv=0
 fi
 
 # Set defaults
@@ -51,6 +51,8 @@ fi
 if [[ -z "${GIT}" ]]
 then
     export GIT="git"
+else
+    export GIT_PYTHON_GIT_EXECUTABLE="${GIT}"
 fi
 
 # python3 venv without trailing slash (defaults to ${install_dir}/${clone_dir}/venv)
