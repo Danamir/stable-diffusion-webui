@@ -566,7 +566,12 @@ class ScriptRunner:
         auto_processing_scripts = scripts_auto_postprocessing.create_auto_preprocessing_script_data()
 
         for script_data in auto_processing_scripts + scripts_data:
-            script = script_data.script_class()
+            try:
+                script = script_data.script_class()
+            except Exception:
+                errors.report(f"Error # failed to initialize Script {script_data.module}: ", exc_info=True)
+                continue
+
             script.filename = script_data.path
             script.is_txt2img = not is_img2img
             script.is_img2img = is_img2img
@@ -691,6 +696,8 @@ class ScriptRunner:
         self.setup_ui_for_section(None, self.selectable_scripts)
 
         def select_script(script_index):
+            if script_index is None:
+                script_index = 0
             selected_script = self.selectable_scripts[script_index - 1] if script_index>0 else None
 
             return [gr.update(visible=selected_script == s) for s in self.selectable_scripts]
@@ -734,7 +741,7 @@ class ScriptRunner:
     def run(self, p, *args):
         script_index = args[0]
 
-        if script_index == 0:
+        if script_index == 0 or script_index is None:
             return None
 
         script = self.selectable_scripts[script_index-1]
