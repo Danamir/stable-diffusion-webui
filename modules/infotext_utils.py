@@ -312,6 +312,18 @@ Steps: 20, Sampler: Euler a, CFG scale: 7, Seed: 965400086, Size: 512x512, Model
     if "Hires negative prompt" not in res:
         res["Hires negative prompt"] = ""
 
+    if "Mask mode" not in res:
+        res["Mask mode"] = "Inpaint masked"
+
+    if "Masked content" not in res:
+        res["Masked content"] = 'original'
+
+    if "Inpaint area" not in res:
+        res["Inpaint area"] = "Whole picture"
+
+    if "Masked area padding" not in res:
+        res["Masked area padding"] = 32
+
     restore_old_hires_fix_params(res)
 
     # Missing RNG means the default was set, which is GPU RNG
@@ -441,9 +453,11 @@ def connect_paste(button, paste_fields, input_comp, override_settings_component,
     def paste_func(prompt):
         if not prompt and not shared.cmd_opts.hide_ui_dir_config:
             filename = os.path.join(data_path, "params.txt")
-            if os.path.exists(filename):
+            try:
                 with open(filename, "r", encoding="utf8") as file:
                     prompt = file.read()
+            except OSError:
+                pass
 
         params = parse_generation_parameters(prompt)
         script_callbacks.infotext_pasted_callback(prompt, params)
@@ -465,6 +479,8 @@ def connect_paste(button, paste_fields, input_comp, override_settings_component,
 
                     if valtype == bool and v == "False":
                         val = False
+                    elif valtype == int:
+                        val = float(v)
                     else:
                         val = valtype(v)
 

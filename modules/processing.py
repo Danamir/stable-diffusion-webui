@@ -732,7 +732,7 @@ def create_infotext(p, all_prompts, all_seeds, all_subseeds, comments=None, iter
         "Variation seed": (None if p.subseed_strength == 0 else (p.all_subseeds[0] if use_main_prompt else all_subseeds[index])),
         "Variation seed strength": (None if p.subseed_strength == 0 else p.subseed_strength),
         "Seed resize from": (None if p.seed_resize_from_w <= 0 or p.seed_resize_from_h <= 0 else f"{p.seed_resize_from_w}x{p.seed_resize_from_h}"),
-        "Denoising strength": getattr(p, 'denoising_strength', None),
+        "Denoising strength": p.extra_generation_params.get("Denoising strength"),
         "Conditional mask weight": getattr(p, "inpainting_mask_weight", shared.opts.inpainting_mask_weight) if p.is_using_inpainting_conditioning else None,
         "Clip skip": None if clip_skip <= 1 else clip_skip,
         "ENSD": opts.eta_noise_seed_delta if uses_ensd else None,
@@ -1198,6 +1198,8 @@ class StableDiffusionProcessingTxt2Img(StableDiffusionProcessing):
 
     def init(self, all_prompts, all_seeds, all_subseeds):
         if self.enable_hr:
+            self.extra_generation_params["Denoising strength"] = self.denoising_strength
+
             if self.hr_checkpoint_name and self.hr_checkpoint_name != 'Use same checkpoint':
                 self.hr_checkpoint_info = sd_models.get_closet_checkpoint_match(self.hr_checkpoint_name)
 
@@ -1517,6 +1519,8 @@ class StableDiffusionProcessingImg2Img(StableDiffusionProcessing):
             self.mask_blur_y = value
 
     def init(self, all_prompts, all_seeds, all_subseeds):
+        self.extra_generation_params["Denoising strength"] = self.denoising_strength
+
         self.image_cfg_scale: float = self.image_cfg_scale if shared.sd_model.cond_stage_key == "edit" else None
 
         self.sampler = sd_samplers.create_sampler(self.sampler_name, self.sd_model)
@@ -1531,6 +1535,7 @@ class StableDiffusionProcessingImg2Img(StableDiffusionProcessing):
 
             if self.inpainting_mask_invert:
                 image_mask = ImageOps.invert(image_mask)
+                self.extra_generation_params["Mask mode"] = "Inpaint not masked"
 
             if self.mask_blur_x > 0:
                 np_mask = np.array(image_mask)
@@ -1544,6 +1549,9 @@ class StableDiffusionProcessingImg2Img(StableDiffusionProcessing):
                 np_mask = cv2.GaussianBlur(np_mask, (1, kernel_size), self.mask_blur_y)
                 image_mask = Image.fromarray(np_mask)
 
+            if self.mask_blur_x > 0 or self.mask_blur_y > 0:
+                self.extra_generation_params["Mask blur"] = self.mask_blur
+
             if self.inpaint_full_res:
                 self.mask_for_overlay = image_mask
                 mask = image_mask.convert('L')
@@ -1554,6 +1562,9 @@ class StableDiffusionProcessingImg2Img(StableDiffusionProcessing):
                 mask = mask.crop(crop_region)
                 image_mask = images.resize_image(2, mask, self.width, self.height)
                 self.paste_to = (x1, y1, x2-x1, y2-y1)
+
+                self.extra_generation_params["Inpaint area"] = "Only masked"
+                self.extra_generation_params["Masked area padding"] = self.inpaint_full_res_padding
             else:
                 image_mask = images.resize_image(self.resize_mode, image_mask, self.width, self.height)
                 np_mask = np.array(image_mask)
@@ -1594,6 +1605,9 @@ class StableDiffusionProcessingImg2Img(StableDiffusionProcessing):
             if image_mask is not None:
                 if self.inpainting_fill != 1:
                     image = masking.fill(image, latent_mask)
+
+                    if self.inpainting_fill == 0:
+                        self.extra_generation_params["Masked content"] = 'fill'
 
             if add_color_corrections:
                 self.color_corrections.append(setup_color_correction(image))
@@ -1647,8 +1661,11 @@ class StableDiffusionProcessingImg2Img(StableDiffusionProcessing):
             # this needs to be fixed to be done in sample() using actual seeds for batches
             if self.inpainting_fill == 2:
                 self.init_latent = self.init_latent * self.mask + create_random_tensors(self.init_latent.shape[1:], all_seeds[0:self.init_latent.shape[0]]) * self.nmask
+                self.extra_generation_params["Masked content"] = 'latent noise'
+
             elif self.inpainting_fill == 3:
                 self.init_latent = self.init_latent * self.mask
+                self.extra_generation_params["Masked content"] = 'latent nothing'
 
         self.image_conditioning = self.img2img_image_conditioning(image * 2 - 1, self.init_latent, image_mask, self.mask_round)
 
