@@ -151,7 +151,18 @@ def connect_clear_prompt(button):
     )
 
 
-def update_token_counter(text, steps, *, is_positive=True):
+def update_token_counter(text, steps, styles, *, is_positive=True):
+    params = script_callbacks.BeforeTokenCounterParams(text, steps, styles, is_positive=is_positive)
+    script_callbacks.before_token_counter_callback(params)
+    text = params.prompt
+    steps = params.steps
+    styles = params.styles
+    is_positive = params.is_positive
+
+    if shared.opts.include_styles_into_token_counters:
+        apply_styles = shared.prompt_styles.apply_styles_to_prompt if is_positive else shared.prompt_styles.apply_negative_styles_to_prompt
+        text = apply_styles(text, styles)
+
     try:
         text, _ = extra_networks.parse_prompt(text)
 
@@ -173,8 +184,8 @@ def update_token_counter(text, steps, *, is_positive=True):
     return f"<span class='gr-box gr-text-input'>{token_count}/{max_length}</span>"
 
 
-def update_negative_prompt_token_counter(text, steps):
-    return update_token_counter(text, steps, is_positive=False)
+def update_negative_prompt_token_counter(*args):
+    return update_token_counter(*args, is_positive=False)
 
 
 def setup_progressbar(*args, **kwargs):
@@ -266,7 +277,7 @@ def create_ui():
 
         dummy_component = gr.Label(visible=False)
 
-        extra_tabs = gr.Tabs(elem_id="txt2img_extra_tabs")
+        extra_tabs = gr.Tabs(elem_id="txt2img_extra_tabs", elem_classes=["extra-networks"])
         extra_tabs.__enter__()
 
         with gr.Tab("Generation", id="txt2img_generation") as txt2img_generation_tab, ResizeHandleRow(equal_height=False):
@@ -485,8 +496,10 @@ def create_ui():
                 height,
             ]
 
-            toprow.token_button.click(fn=wrap_queued_call(update_token_counter), inputs=[toprow.prompt, steps], outputs=[toprow.token_counter])
-            toprow.negative_token_button.click(fn=wrap_queued_call(update_negative_prompt_token_counter), inputs=[toprow.negative_prompt, steps], outputs=[toprow.negative_token_counter])
+            toprow.ui_styles.dropdown.change(fn=wrap_queued_call(update_token_counter), inputs=[toprow.prompt, steps, toprow.ui_styles.dropdown], outputs=[toprow.token_counter])
+            toprow.ui_styles.dropdown.change(fn=wrap_queued_call(update_negative_prompt_token_counter), inputs=[toprow.negative_prompt, steps, toprow.ui_styles.dropdown], outputs=[toprow.negative_token_counter])
+            toprow.token_button.click(fn=wrap_queued_call(update_token_counter), inputs=[toprow.prompt, steps, toprow.ui_styles.dropdown], outputs=[toprow.token_counter])
+            toprow.negative_token_button.click(fn=wrap_queued_call(update_negative_prompt_token_counter), inputs=[toprow.negative_prompt, steps, toprow.ui_styles.dropdown], outputs=[toprow.negative_token_counter])
 
         extra_networks_ui = ui_extra_networks.create_ui(txt2img_interface, [txt2img_generation_tab], 'txt2img')
         ui_extra_networks.setup_ui(extra_networks_ui, output_panel.gallery)
@@ -499,7 +512,7 @@ def create_ui():
     with gr.Blocks(analytics_enabled=False) as img2img_interface:
         toprow = ui_toprow.Toprow(is_img2img=True, is_compact=shared.opts.compact_prompt_box)
 
-        extra_tabs = gr.Tabs(elem_id="img2img_extra_tabs")
+        extra_tabs = gr.Tabs(elem_id="img2img_extra_tabs", elem_classes=["extra-networks"])
         extra_tabs.__enter__()
 
         with gr.Tab("Generation", id="img2img_generation") as img2img_generation_tab, ResizeHandleRow(equal_height=False):
@@ -532,7 +545,7 @@ def create_ui():
 
                     if category == "image":
                         with gr.Tabs(elem_id="mode_img2img"):
-                            img2img_selected_tab = gr.State(0)
+                            img2img_selected_tab = gr.Number(value=0, visible=False)
 
                             with gr.TabItem('img2img', id='img2img', elem_id="img2img_img2img_tab") as tab_img2img:
                                 init_img = gr.Image(label="Image for img2img", elem_id="img2img_image", show_label=False, source="upload", interactive=True, type="pil", tool="editor", image_mode="RGBA", height=opts.img2img_editor_height)
@@ -614,7 +627,7 @@ def create_ui():
                     elif category == "dimensions":
                         with FormRow():
                             with gr.Column(elem_id="img2img_column_size", scale=4):
-                                selected_scale_tab = gr.State(value=0)
+                                selected_scale_tab = gr.Number(value=0, visible=False)
 
                                 with gr.Tabs():
                                     with gr.Tab(label="Resize to", elem_id="img2img_tab_resize_to") as tab_scale_to:
@@ -826,8 +839,10 @@ def create_ui():
                 **interrogate_args,
             )
 
-            toprow.token_button.click(fn=update_token_counter, inputs=[toprow.prompt, steps], outputs=[toprow.token_counter])
-            toprow.negative_token_button.click(fn=wrap_queued_call(update_token_counter), inputs=[toprow.negative_prompt, steps], outputs=[toprow.negative_token_counter])
+            toprow.ui_styles.dropdown.change(fn=wrap_queued_call(update_token_counter), inputs=[toprow.prompt, steps, toprow.ui_styles.dropdown], outputs=[toprow.token_counter])
+            toprow.ui_styles.dropdown.change(fn=wrap_queued_call(update_negative_prompt_token_counter), inputs=[toprow.negative_prompt, steps, toprow.ui_styles.dropdown], outputs=[toprow.negative_token_counter])
+            toprow.token_button.click(fn=update_token_counter, inputs=[toprow.prompt, steps, toprow.ui_styles.dropdown], outputs=[toprow.token_counter])
+            toprow.negative_token_button.click(fn=wrap_queued_call(update_negative_prompt_token_counter), inputs=[toprow.negative_prompt, steps, toprow.ui_styles.dropdown], outputs=[toprow.negative_token_counter])
 
             img2img_paste_fields = [
                 (toprow.prompt, "Prompt"),
@@ -865,7 +880,7 @@ def create_ui():
         ui_postprocessing.create_ui()
 
     with gr.Blocks(analytics_enabled=False) as pnginfo_interface:
-        with gr.Row(equal_height=False):
+        with ResizeHandleRow(equal_height=False):
             with gr.Column(variant='panel'):
                 image = gr.Image(elem_id="pnginfo_image", label="Source", source="upload", interactive=True, type="pil")
 
@@ -893,7 +908,7 @@ def create_ui():
         with gr.Row(equal_height=False):
             gr.HTML(value="<p style='margin-bottom: 0.7em'>See <b><a href=\"https://github.com/AUTOMATIC1111/stable-diffusion-webui/wiki/Textual-Inversion\">wiki</a></b> for detailed explanation.</p>")
 
-        with gr.Row(variant="compact", equal_height=False):
+        with ResizeHandleRow(variant="compact", equal_height=False):
             with gr.Tabs(elem_id="train_tabs"):
 
                 with gr.Tab(label="Create embedding", id="create_embedding"):
