@@ -39,3 +39,4 @@ notification.mp3
 /.coverage*
 *.iml
 /test/test_outputs
+/cache
