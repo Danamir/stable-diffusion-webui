@@ -1,3 +1,34 @@
+## 1.9.2
+
+### Extensions and API:
+* restore 1.8.0-style naming of scripts
+
+## 1.9.1
+
+### Minor:
+* Add avif support ([#15582](https://github.com/AUTOMATIC1111/stable-diffusion-webui/pull/15582))
+* Add filename patterns: `[sampler_scheduler]` and `[scheduler]` ([#15581](https://github.com/AUTOMATIC1111/stable-diffusion-webui/pull/15581))
+
+### Extensions and API:
+* undo adding scripts to sys.modules
+* Add schedulers API endpoint ([#15577](https://github.com/AUTOMATIC1111/stable-diffusion-webui/pull/15577))
+* Remove API upscaling factor limits ([#15560](https://github.com/AUTOMATIC1111/stable-diffusion-webui/pull/15560))
+
+### Bug Fixes:
+* Fix images do not match / Coordinate 'right' is less than 'left' ([#15534](https://github.com/AUTOMATIC1111/stable-diffusion-webui/pull/15534))
+* fix: remove_callbacks_for_function should also remove from the ordered map ([#15533](https://github.com/AUTOMATIC1111/stable-diffusion-webui/pull/15533))
+* fix x1 upscalers ([#15555](https://github.com/AUTOMATIC1111/stable-diffusion-webui/pull/15555))
+* Fix cls.__module__ value in extension script ([#15532](https://github.com/AUTOMATIC1111/stable-diffusion-webui/pull/15532))
+* fix typo in function call (eror -> error) ([#15531](https://github.com/AUTOMATIC1111/stable-diffusion-webui/pull/15531))
+
+### Other:
+* Hide 'No Image data blocks found.' message ([#15567](https://github.com/AUTOMATIC1111/stable-diffusion-webui/pull/15567))
+* Allow webui.sh to be runnable from arbitrary directories containing a .git file ([#15561](https://github.com/AUTOMATIC1111/stable-diffusion-webui/pull/15561))
+* Compatibility with Debian 11, Fedora 34+ and openSUSE 15.4+ ([#15544](https://github.com/AUTOMATIC1111/stable-diffusion-webui/pull/15544))
+* numpy DeprecationWarning product -> prod ([#15547](https://github.com/AUTOMATIC1111/stable-diffusion-webui/pull/15547))
+* get_crop_region_v2 ([#15583](https://github.com/AUTOMATIC1111/stable-diffusion-webui/pull/15583), [#15587](https://github.com/AUTOMATIC1111/stable-diffusion-webui/pull/15587))
+
+
 ## 1.9.0
 
 ### Features:
@@ -81,6 +112,9 @@
 * minor bug fix of sd model memory management ([#15350](https://github.com/AUTOMATIC1111/stable-diffusion-webui/pull/15350))
 * Fix CodeFormer weight ([#15414](https://github.com/AUTOMATIC1111/stable-diffusion-webui/pull/15414))
 * Fix: Remove script callbacks in ordered_callbacks_map ([#15428](https://github.com/AUTOMATIC1111/stable-diffusion-webui/pull/15428))
+* fix limited file write (thanks, Sylwia)
+* Fix extra-single-image API not doing upscale failed ([#15465](https://github.com/AUTOMATIC1111/stable-diffusion-webui/pull/15465))
+* error handling paste_field callables ([#15470](https://github.com/AUTOMATIC1111/stable-diffusion-webui/pull/15470))
 
 ### Hardware:
 * Add training support and change lspci for Ascend NPU ([#14981](https://github.com/AUTOMATIC1111/stable-diffusion-webui/pull/14981))
@@ -112,6 +146,8 @@
 * Add Size as an XYZ Grid option ([#15354](https://github.com/AUTOMATIC1111/stable-diffusion-webui/pull/15354))
 * Use HF_ENDPOINT variable for HuggingFace domain with default ([#15443](https://github.com/AUTOMATIC1111/stable-diffusion-webui/pull/15443))
 * re-add update_file_entry ([#15446](https://github.com/AUTOMATIC1111/stable-diffusion-webui/pull/15446))
+* create_infotext allow index and callable, re-work Hires prompt infotext ([#15460](https://github.com/AUTOMATIC1111/stable-diffusion-webui/pull/15460))
+* update restricted_opts to include more options for --hide-ui-dir-config ([#15492](https://github.com/AUTOMATIC1111/stable-diffusion-webui/pull/15492))
 
 
 ## 1.8.0
