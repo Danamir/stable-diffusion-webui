@@ -40,3 +40,4 @@ notification.mp3
 *.iml
 /test/test_outputs
 /cache
+trace.json

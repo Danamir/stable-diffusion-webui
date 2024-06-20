@@ -1,5 +1,5 @@
 import torch
-from modules import prompt_parser, devices, sd_samplers_common
+from modules import prompt_parser, sd_samplers_common
 
 from modules.shared import opts, state
 import modules.shared as shared
@@ -272,8 +272,6 @@ class CFGDenoiser(torch.nn.Module):
 
         denoised_params = CFGDenoisedParams(x_out, state.sampling_step, state.sampling_steps, self.inner_model)
         cfg_denoised_callback(denoised_params)
-
-        devices.test_for_nans(x_out, "unet")
 
         if is_edit_model:
             denoised = self.combine_denoised_for_edit_model(x_out, cond_scale)

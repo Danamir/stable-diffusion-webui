@@ -129,6 +129,22 @@ options_templates.update(options_section(('system', "System", "system"), {
     "dump_stacks_on_signal": OptionInfo(False, "Print stack traces before exiting the program with ctrl+c."),
 }))
 
+options_templates.update(options_section(('profiler', "Profiler", "system"), {
+    "profiling_explanation": OptionHTML("""
+Those settings allow you to enable torch profiler when generating pictures.
+Profiling allows you to see which code uses how much of computer's resources during generation.
+Each generation writes its own profile to one file, overwriting previous.
+The file can be viewed in <a href="chrome:tracing">Chrome</a>, or on a <a href="https://ui.perfetto.dev/">Perfetto</a> web site.
+Warning: writing profile can take a lot of time, up to 30 seconds, and the file itelf can be around 500MB in size.
+"""),
+    "profiling_enable": OptionInfo(False, "Enable profiling"),
+    "profiling_activities": OptionInfo(["CPU"], "Activities", gr.CheckboxGroup, {"choices": ["CPU", "CUDA"]}),
+    "profiling_record_shapes": OptionInfo(True, "Record shapes"),
+    "profiling_profile_memory": OptionInfo(True, "Profile memory"),
+    "profiling_with_stack": OptionInfo(True, "Include python stack"),
+    "profiling_filename": OptionInfo("trace.json", "Profile filename"),
+}))
+
 options_templates.update(options_section(('API', "API", "system"), {
     "api_enable_requests": OptionInfo(True, "Allow http:// and https:// URLs for input images in API", restrict_api=True),
     "api_forbid_local_requests": OptionInfo(True, "Forbid URLs to local resources", restrict_api=True),
@@ -160,6 +176,7 @@ options_templates.update(options_section(('sd', "Stable Diffusion", "sd"), {
     "emphasis": OptionInfo("Original", "Emphasis mode", gr.Radio, lambda: {"choices": [x.name for x in sd_emphasis.options]}, infotext="Emphasis").info("makes it possible to make model to pay (more:1.1) or (less:0.9) attention to text when you use the syntax in prompt; " + sd_emphasis.get_options_descriptions()),
     "enable_batch_seeds": OptionInfo(True, "Make K-diffusion samplers produce same images in a batch as when making a single image"),
     "comma_padding_backtrack": OptionInfo(20, "Prompt word wrap length limit", gr.Slider, {"minimum": 0, "maximum": 74, "step": 1}).info("in tokens - for texts shorter than specified, if they don't fit into 75 token limit, move them to the next 75 token chunk"),
+    "sdxl_clip_l_skip": OptionInfo(False, "Clip skip SDXL", gr.Checkbox).info("Enable Clip skip for the secondary clip model in sdxl. Has no effect on SD 1.5 or SD 2.0/2.1."),
     "CLIP_stop_at_last_layers": OptionInfo(1, "Clip skip", gr.Slider, {"minimum": 1, "maximum": 12, "step": 1}, infotext="Clip skip").link("wiki", "https://github.com/AUTOMATIC1111/stable-diffusion-webui/wiki/Features#clip-skip").info("ignore last layers of CLIP network; 1 ignores none, 2 ignores one layer"),
     "upcast_attn": OptionInfo(False, "Upcast cross attention layer to float32"),
     "randn_source": OptionInfo("GPU", "Random number generator source.", gr.Radio, {"choices": ["GPU", "CPU", "NV"]}, infotext="RNG").info("changes seeds drastically; use CPU to produce the same picture across different videocard vendors; use NV to produce same picture as on NVidia videocards"),
@@ -360,6 +377,7 @@ options_templates.update(options_section(('ui', "Live previews", "ui"), {
     "live_preview_refresh_period": OptionInfo(1000, "Progressbar and preview update period").info("in milliseconds"),
     "live_preview_fast_interrupt": OptionInfo(False, "Return image with chosen live preview method on interrupt").info("makes interrupts faster"),
     "js_live_preview_in_modal_lightbox": OptionInfo(False, "Show Live preview in full page image viewer"),
+    "prevent_screen_sleep_during_generation": OptionInfo(True, "Prevent screen sleep during generation"),
 }))
 
 options_templates.update(options_section(('sampler-params', "Sampler parameters", "sd"), {

@@ -16,7 +16,7 @@ from skimage import exposure
 from typing import Any
 
 import modules.sd_hijack
-from modules import devices, prompt_parser, masking, sd_samplers, lowvram, infotext_utils, extra_networks, sd_vae_approx, scripts, sd_samplers_common, sd_unet, errors, rng
+from modules import devices, prompt_parser, masking, sd_samplers, lowvram, infotext_utils, extra_networks, sd_vae_approx, scripts, sd_samplers_common, sd_unet, errors, rng, profiling
 from modules.rng import slerp # noqa: F401
 from modules.sd_hijack import model_hijack
 from modules.sd_samplers_common import images_tensor_to_samples, decode_first_stage, approximation_indexes
@@ -115,7 +115,7 @@ def txt2img_image_conditioning(sd_model, x, width, height):
         return x.new_zeros(x.shape[0], 2*sd_model.noise_augmentor.time_embed.dim, dtype=x.dtype, device=x.device)
 
     else:
-        if getattr(sd_model.model, "is_sdxl_inpaint", False):
+        if sd_model.is_sdxl_inpaint:
             # The "masked-image" in this case will just be all 0.5 since the entire image is masked.
             image_conditioning = torch.ones(x.shape[0], 3, height, width, device=x.device) * 0.5
             image_conditioning = images_tensor_to_samples(image_conditioning,
@@ -389,7 +389,7 @@ class StableDiffusionProcessing:
         if self.sampler.conditioning_key == "crossattn-adm":
             return self.unclip_image_conditioning(source_image)
 
-        if getattr(self.sampler.model_wrap.inner_model.model, "is_sdxl_inpaint", False):
+        if self.sampler.model_wrap.inner_model.is_sdxl_inpaint:
             return self.inpainting_image_conditioning(source_image, latent_image, image_mask=image_mask)
 
         # Dummy zero conditioning if we're not using inpainting or depth model.
@@ -625,6 +625,9 @@ class DecodedSamples(list):
 def decode_latent_batch(model, batch, target_device=None, check_for_nans=False):
     samples = DecodedSamples()
 
+    if check_for_nans:
+        devices.test_for_nans(batch, "unet")
+
     for i in range(batch.shape[0]):
         sample = decode_first_stage(model, batch[i:i + 1])[0]
 
@@ -840,7 +843,8 @@ def process_images(p: StableDiffusionProcessing) -> Processed:
         # backwards compatibility, fix sampler and scheduler if invalid
         sd_samplers.fix_p_invalid_sampler_and_scheduler(p)
 
-        res = process_images_inner(p)
+        with profiling.Profiler():
+            res = process_images_inner(p)
 
     finally:
         sd_models.apply_token_merging(p.sd_model, 0)
@@ -987,6 +991,8 @@ def process_images_inner(p: StableDiffusionProcessing) -> Processed:
             if getattr(samples_ddim, 'already_decoded', False):
                 x_samples_ddim = samples_ddim
             else:
+                devices.test_for_nans(samples_ddim, "unet")
+
                 if opts.sd_vae_decode_method != 'Full':
                     p.extra_generation_params['VAE Decoder'] = opts.sd_vae_decode_method
                 x_samples_ddim = decode_latent_batch(p.sd_model, samples_ddim, target_device=devices.cpu, check_for_nans=True)
@@ -1324,6 +1330,15 @@ class StableDiffusionProcessingTxt2Img(StableDiffusionProcessing):
             # here we generate an image normally
 
             x = self.rng.next()
+            if self.scripts is not None:
+                self.scripts.process_before_every_sampling(
+                    p=self,
+                    x=x,
+                    noise=x,
+                    c=conditioning,
+                    uc=unconditional_conditioning
+                )
+
             samples = self.sampler.sample(self, x, conditioning, unconditional_conditioning, image_conditioning=self.txt2img_image_conditioning(x))
             del x
 
@@ -1424,6 +1439,13 @@ class StableDiffusionProcessingTxt2Img(StableDiffusionProcessing):
 
         if self.scripts is not None:
             self.scripts.before_hr(self)
+            self.scripts.process_before_every_sampling(
+                p=self,
+                x=samples,
+                noise=noise,
+                c=self.hr_c,
+                uc=self.hr_uc,
+            )
 
         samples = self.sampler.sample_img2img(self, samples, noise, self.hr_c, self.hr_uc, steps=self.hr_second_pass_steps or self.steps, image_conditioning=image_conditioning)
 
@@ -1741,6 +1763,14 @@ class StableDiffusionProcessingImg2Img(StableDiffusionProcessing):
             self.extra_generation_params["Noise multiplier"] = self.initial_noise_multiplier
             x *= self.initial_noise_multiplier
 
+        if self.scripts is not None:
+            self.scripts.process_before_every_sampling(
+                p=self,
+                x=self.init_latent,
+                noise=x,
+                c=conditioning,
+                uc=unconditional_conditioning
+            )
         samples = self.sampler.sample_img2img(self, self.init_latent, x, conditioning, unconditional_conditioning, image_conditioning=self.image_conditioning)
 
         if self.mask is not None:

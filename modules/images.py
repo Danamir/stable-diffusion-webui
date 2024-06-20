@@ -54,11 +54,14 @@ def image_grid(imgs, batch_size=1, rows=None):
     params = script_callbacks.ImageGridLoopParams(imgs, cols, rows)
     script_callbacks.image_grid_callback(params)
 
-    w, h = imgs[0].size
-    grid = Image.new('RGB', size=(params.cols * w, params.rows * h), color='black')
+    w, h = map(max, zip(*(img.size for img in imgs)))
+    grid_background_color = ImageColor.getcolor(opts.grid_background_color, 'RGB')
+    grid = Image.new('RGB', size=(params.cols * w, params.rows * h), color=grid_background_color)
 
     for i, img in enumerate(params.imgs):
-        grid.paste(img, box=(i % params.cols * w, i // params.cols * h))
+        img_w, img_h = img.size
+        w_offset, h_offset = 0 if img_w == w else (w - img_w) // 2, 0 if img_h == h else (h - img_h) // 2
+        grid.paste(img, box=(i % params.cols * w + w_offset, i // params.cols * h + h_offset))
 
     return grid
 
@@ -377,6 +380,7 @@ def get_sampler_scheduler(p, sampler):
 
 class FilenameGenerator:
     replacements = {
+        'basename': lambda self: self.basename or 'img',
         'seed': lambda self: self.seed if self.seed is not None else '',
         'seed_first': lambda self: self.seed if self.p.batch_size == 1 else self.p.all_seeds[0],
         'seed_last': lambda self: NOTHING_AND_SKIP_PREVIOUS_TEXT if self.p.batch_size == 1 else self.p.all_seeds[-1],
@@ -413,12 +417,13 @@ class FilenameGenerator:
     }
     default_time_format = '%Y%m%d%H%M%S'
 
-    def __init__(self, p, seed, prompt, image, zip=False):
+    def __init__(self, p, seed, prompt, image, zip=False, basename=""):
         self.p = p
         self.seed = seed
         self.prompt = prompt
         self.image = image
         self.zip = zip
+        self.basename = basename
 
     def get_vae_filename(self):
         """Get the name of the VAE file."""
@@ -649,7 +654,7 @@ def save_image(image, path, basename, seed=None, prompt=None, extension='png', i
         txt_fullfn (`str` or None):
             If a text file is saved for this image, this will be its full path. Otherwise None.
     """
-    namegen = FilenameGenerator(p, seed, prompt, image)
+    namegen = FilenameGenerator(p, seed, prompt, image, basename=basename)
 
     # WebP and JPG formats have maximum dimension limits of 16383 and 65535 respectively. switch to PNG which has a much higher limit
     if (image.height > 65535 or image.width > 65535) and extension.lower() in ("jpg", "jpeg") or (image.height > 16383 or image.width > 16383) and extension.lower() == "webp":

@@ -1,12 +1,18 @@
 import dataclasses
-
 import torch
-
 import k_diffusion
-
 import numpy as np
 
 from modules import shared
+
+
+def to_d(x, sigma, denoised):
+    """Converts a denoiser output to a Karras ODE derivative."""
+    return (x - denoised) / sigma
+
+
+k_diffusion.sampling.to_d = to_d
+
 
 @dataclasses.dataclass
 class Scheduler:
@@ -20,7 +26,7 @@ class Scheduler:
 
 
 def uniform(n, sigma_min, sigma_max, inner_model, device):
-    return inner_model.get_sigmas(n)
+    return inner_model.get_sigmas(n).to(device)
 
 
 def sgm_uniform(n, sigma_min, sigma_max, inner_model, device):
@@ -33,7 +39,8 @@ def sgm_uniform(n, sigma_min, sigma_max, inner_model, device):
     sigs += [0.0]
     return torch.FloatTensor(sigs).to(device)
 
-def get_align_your_steps_sigmas(n, sigma_min, sigma_max, device='cpu'):
+
+def get_align_your_steps_sigmas(n, sigma_min, sigma_max, device):
     # https://research.nvidia.com/labs/toronto-ai/AlignYourSteps/howto.html
     def loglinear_interp(t_steps, num_steps):
         """
@@ -60,6 +67,7 @@ def get_align_your_steps_sigmas(n, sigma_min, sigma_max, device='cpu'):
         sigmas.append(0.0)
 
     return torch.FloatTensor(sigmas).to(device)
+
 
 def kl_optimal(n, sigma_min, sigma_max, device):
     alpha_min = torch.arctan(torch.tensor(sigma_min, device=device))
